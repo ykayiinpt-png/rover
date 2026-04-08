@@ -1,0 +1,45 @@
+# --- Python General ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+.venv/
+env/
+venv/
+build/
+dist/
+*.egg-info/
+
+# --- Robotics Middleware & Build Systems ---
+# ROS/ROS2 specific
+install/
+log/
+devel/
+*.rosinstall
+.catkin_workspace
+# ArmarX/C++ related robotics files
+CMakeFiles/
+CMakeCache.txt
+*.o
+*.so
+*.a
+
+# --- Data, Logs & Simulations ---
+# Large log files and bag files
+*.bag
+*.mcap
+*.log
+# Simulation/Visualization
+.ipynb_checkpoints/
+docs/_build/
+output/
+temp/
+
+# --- IDE & OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+*.zip
