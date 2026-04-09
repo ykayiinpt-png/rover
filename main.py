@@ -10,7 +10,9 @@ logging.basicConfig(
 )
 
 def main():    
-    wrp = FakeSensorWrapper("wss://echo.websocket.org")
+    #wrp = FakeSensorWrapper("wss://echo.websocket.org")
+    wrp = FakeSensorWrapper("ws://127.0.0.1:8000/mission_data/acquire")
+    
     
     try:
         wrp.component.start()

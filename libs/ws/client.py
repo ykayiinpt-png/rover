@@ -161,7 +161,7 @@ class WebSocketClient:
                 
                 data = await self.async_q.get()
 
-                message = str(data)
+                message = data
                 print("Data received from queue: ", message)
                 try:
                     await ws.send(message)

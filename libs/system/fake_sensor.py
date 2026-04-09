@@ -1,5 +1,8 @@
+import datetime
+import json
 import logging
 import time
+import random
 
 from libs.component.thread_ws import ThreadWsComponent
 from libs.threads import RThread
@@ -14,10 +17,20 @@ class FakeSensorDatAcquisition(RThread):
         
     def run(self):
         while not self.stop_event.is_set():
-            data = { "counter": self.counter }
-            self.counter += 1
+            data = {
+                "mission_id": 1, 
+                "timestamp": int(datetime.datetime.timestamp(datetime.datetime.now())),
+                "payload": [
+                    {"u_sund_front": self.counter}
+                ]
+            }
             
-            self.sync_q.put(data.copy())
+            for i in range(20):
+                data['payload'].append({"u_sund_front": self.counter + 1})
+                
+            self.counter +=  ((-1) ** random.randint(0, 5)) * random.randint(0, 10)
+            
+            self.sync_q.put(json.dumps(data))
             
             logging.info("Data sent to sync queue")
             
