@@ -14,7 +14,7 @@ from websockets.exceptions import (
     InvalidURI,
 )
 
-from libs.thread_bridge import ThreadCoroutineBridge
+from src.thread_bridge import ThreadCoroutineBridge
 
 logging.basicConfig(
     level=logging.INFO,
@@ -141,6 +141,10 @@ class WebSocketClient:
                 try:
                     msg = await asyncio.wait_for(ws.recv(), timeout=self.recv_timeout, loop=self.async_event_loop)
                     logging.info(f"Remote Received: {msg}")
+                    
+                    # Add data the brigde sync queue
+                    # to the actuator to react
+                    await self.queue_bridge.push_from_coroutin(msg)
 
                 except asyncio.TimeoutError:
                     logging.warning("Receive timeout — sending ping")
@@ -169,6 +173,8 @@ class WebSocketClient:
                     return
                 
                 data = await self.queue_bridge.q_async.get()
+                if data is None:
+                    return
 
                 message = data
                 print("Data received from queue: ", message)

@@ -5,10 +5,10 @@ import logging
 import time
 import random
 
-from libs.component.thread_ws import ThreadWsComponent
-from libs.thread_bridge import ThreadCoroutineBridge
-from libs.threads import RThread
-from libs.ws.client import WebSocketClient
+from src.component.thread_ws import ThreadWsComponent
+from src.thread_bridge import ThreadCoroutineBridge
+from src.threads import RThread
+from src.ws.client import WebSocketClient
 
 
 class FakeSensorDatAcquisition(RThread):

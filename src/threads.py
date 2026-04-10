@@ -1,6 +1,6 @@
 import threading
 
-from libs.thread_bridge import ThreadCoroutineBridge
+from src.thread_bridge import ThreadCoroutineBridge
 
 class RThread(threading.Thread):
     """

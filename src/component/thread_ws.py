@@ -3,10 +3,10 @@ import logging
 
 import janus
 
-from libs.component.component import ActuatorComponent
-from libs.thread_bridge import ThreadCoroutineBridge
-from libs.threads import RThread
-from libs.ws.client import WebSocketClient
+from src.component.component import ActuatorComponent
+from src.thread_bridge import ThreadCoroutineBridge
+from src.threads import RThread
+from src.ws.client import WebSocketClient
 
 
 class ThreadWsComponent(ActuatorComponent):
@@ -43,7 +43,7 @@ class ThreadWsComponent(ActuatorComponent):
             await self.ws.connect()
             logging.info("In ThreadWs, Ws socket connected")
         except Exception as e:
-            logging.error("Can start the websocket")
+            logging.error("Can't start the websocket")
             print(e)
         finally:
             await self.ws.close()
@@ -62,13 +62,13 @@ class ThreadWsComponent(ActuatorComponent):
             logging.error("Ws has no queue Set")
             return
         
-        self.started = True
-        
         self.ws_task = self.async_event_loop.create_task(self._run_ws(),)
         logging.info("Ws scheduled for async")     
         
         self.thread.start()
-        logging.info("Thread started")   
+        logging.info("Thread started")
+        
+        self.started = True   
         
         
     def join_threads(self):

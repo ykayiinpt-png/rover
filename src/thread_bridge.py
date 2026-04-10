@@ -22,9 +22,9 @@ class ThreadCoroutineBridge:
         else:
             logging.warning("Event loop has been closed In thread coroutine bridge")
         
-    def push_from_coroutin(self, data):
+    async def push_from_coroutin(self, data):
         """
         Coroutine non blocking pushing data to queue
         """
-        asyncio.to_thread(self.q_sync.put_nowait, data)
+        await asyncio.to_thread(self.q_sync.put_nowait, data)
         

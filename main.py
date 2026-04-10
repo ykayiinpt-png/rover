@@ -2,8 +2,9 @@ import asyncio
 import logging
 import threading
 
-from libs.system.fake_sensor import FakeSensorWrapper
-from libs.ws.client import WebSocketClient
+from src.rtc.server import RtcServer
+from src.system.fake_sensor import FakeSensorWrapper
+from src.ws.client import WebSocketClient
 
 
 logging.basicConfig(
@@ -21,15 +22,20 @@ async def main():
     )
     #wrp = FakeSensorWrapper("ws://127.0.0.1:8000/mission_data/acquire")
     
+    rtcServer = RtcServer("wss://echo.websocket.org", loop)
     
     try:
-        await wrp.run()
+        #await wrp.run()
+        await rtcServer.run()
+        
         await stop.wait()
     except asyncio.CancelledError:
         # Fallback for Windows (no signal handler)
         logging.info("Cancelleation received, exiting...")
     finally:
-        await wrp.clean()
+        #await wrp.clean()
+        await rtcServer.stop()
+    
 
 
 if __name__ == "__main__":
