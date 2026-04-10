@@ -1,5 +1,7 @@
 import threading
 
+from libs.thread_bridge import ThreadCoroutineBridge
+
 class RThread(threading.Thread):
     """
     Augmented thread for looping task.
@@ -14,4 +16,5 @@ class RThread(threading.Thread):
         self.stop_event = threading.Event()
         
         # Queue for communication
-        self.sync_q = None
+        # self.sync_q = None
+        self.queue_bridge: ThreadCoroutineBridge = None

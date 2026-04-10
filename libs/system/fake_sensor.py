@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import logging
@@ -5,6 +6,7 @@ import time
 import random
 
 from libs.component.thread_ws import ThreadWsComponent
+from libs.thread_bridge import ThreadCoroutineBridge
 from libs.threads import RThread
 from libs.ws.client import WebSocketClient
 
@@ -25,12 +27,12 @@ class FakeSensorDatAcquisition(RThread):
                 ]
             }
             
-            for i in range(20):
-                data['payload'].append({"u_sund_front": self.counter + 1})
+            #for i in range(20):
+            #    data['payload'].append({"u_sund_front": self.counter + 1})
                 
             self.counter +=  ((-1) ** random.randint(0, 5)) * random.randint(0, 10)
             
-            self.sync_q.put(json.dumps(data))
+            self.queue_bridge.push_from_thread(json.dumps(data))
             
             logging.info("Data sent to sync queue")
             
@@ -40,16 +42,24 @@ class FakeSensorDatAcquisition(RThread):
             
 class FakeSensorWs(WebSocketClient):
     
-    def __init__(self, uri):
-        super().__init__(uri)
+    def __init__(self, uri, async_event_loop):
+        super().__init__(uri, async_event_loop)
             
 
 
 class FakeSensorWrapper:
     
-    def __init__(self, uri):
-        
+    def __init__(self, uri, async_event_loop):        
         self.component = ThreadWsComponent(
             FakeSensorDatAcquisition(),
-            FakeSensorWs(uri)
+            FakeSensorWs(uri, async_event_loop),
+            ThreadCoroutineBridge(async_event_loop),
+            async_event_loop=async_event_loop
         )
+        
+    async def run(self):
+        await self.component.start()
+        #await self.component.join_threads()
+        
+    async def clean(self):
+        await self.component.stop()

@@ -3,6 +3,7 @@ import logging
 import signal
 from contextlib import suppress
 import json
+import time
 
 import websockets
 from websockets.exceptions import (
@@ -12,6 +13,8 @@ from websockets.exceptions import (
     InvalidHandshake,
     InvalidURI,
 )
+
+from libs.thread_bridge import ThreadCoroutineBridge
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,7 +33,7 @@ class WebSocketClient:
     through another queue for processing.
     """
     
-    def __init__(self, uri: str):
+    def __init__(self, uri: str, async_event_loop: asyncio.AbstractEventLoop):
         self.uri = uri
         self.reconnec_relay = 3
         self.max_reconnec_relay = 30
@@ -40,11 +43,16 @@ class WebSocketClient:
         self.ping_timeout = 20
         self.sleep_time_send = 10
 
-        self.stop_event = asyncio.Event()
-        self._ws = None
+        self.async_event_loop = async_event_loop
+        
+        self.stop_event = asyncio.Event(loop=async_event_loop)
+        
+        self._ws: websockets.ClientConnection = None
         
         # Queue for communication with an actuator
-        self.async_q = None
+        #self.async_q = None
+        
+        self.queue_bridge: ThreadCoroutineBridge = None
 
     # -------- SIGNAL HANDLING -------- #
 
@@ -96,10 +104,10 @@ class WebSocketClient:
                 break
 
             logging.info(f"Reconnecting in {backoff} seconds...")
-            await asyncio.sleep(backoff)
+            await asyncio.sleep(backoff, loop=self.async_event_loop)
             backoff = min(backoff * 2, self.max_reconnec_relay)
 
-        logging.info("Exiting connect loop")
+        logging.info("Connection Success. Exiting connect loop")
 
     # -------- MESSAGE LOOP -------- #
 
@@ -109,6 +117,7 @@ class WebSocketClient:
 
         done, pending = await asyncio.wait(
             [receiver_task, sender_task],
+            loop=self.async_event_loop,
             return_when=asyncio.FIRST_EXCEPTION,
         )
 
@@ -130,7 +139,7 @@ class WebSocketClient:
         try:
             while not self.stop_event.is_set():
                 try:
-                    msg = await asyncio.wait_for(ws.recv(), timeout=self.recv_timeout)
+                    msg = await asyncio.wait_for(ws.recv(), timeout=self.recv_timeout, loop=self.async_event_loop)
                     logging.info(f"Remote Received: {msg}")
 
                 except asyncio.TimeoutError:
@@ -151,24 +160,26 @@ class WebSocketClient:
 
     # -------- SENDER (OPTIONAL) -------- #
 
-    async def sender(self, ws):
+    async def sender(self, ws: websockets.ClientConnection):
         try:
             while not self.stop_event.is_set():
-                if self.async_q is None:
+                if self.queue_bridge is None:
                     logging.error("async_q has not been set")
                     self.request_shutdown()
                     return
                 
-                data = await self.async_q.get()
+                data = await self.queue_bridge.q_async.get()
 
                 message = data
                 print("Data received from queue: ", message)
                 try:
-                    await ws.send(message)
+                    start = time.perf_counter()
+                    await ws.send(message) # TODO: use text=False to send binary
                     logging.info(f"Sent: {message}")
+                    print("Time: ",  time.perf_counter() - start)
                     
                     # Wait
-                    await asyncio.sleep(self.sleep_time_send)
+                    await asyncio.sleep(self.sleep_time_send, loop=self.async_event_loop)
                 except ConnectionClosed:
                     logging.info("Sender: connection closed")
                     break
@@ -190,7 +201,7 @@ class WebSocketClient:
 
         if self._ws:
             try:
-                await asyncio.wait_for(self._ws.close(), timeout=5)
+                await asyncio.wait_for(self._ws.close(), timeout=5, loop=self.async_event_loop)
                 logging.info("WebSocket closed")
             except Exception:
                 logging.exception("Error while closing websocket")

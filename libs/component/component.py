@@ -1,3 +1,6 @@
+from asyncio import AbstractEventLoop
+
+
 class ActuatorComponent:
     """
     Actuator component is a base entity of system that
@@ -13,8 +16,9 @@ class ActuatorComponent:
     The component that produces the core data is called actuator
     """
     
-    def __init__(self):
+    def __init__(self, async_event_loop: AbstractEventLoop = None):
         self.started = False
+        self.async_event_loop = async_event_loop
     
     def join_threads(self):
         pass

@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import threading
 
 from libs.system.fake_sensor import FakeSensorWrapper
 from libs.ws.client import WebSocketClient
@@ -9,19 +11,31 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
-def main():    
-    #wrp = FakeSensorWrapper("wss://echo.websocket.org")
-    wrp = FakeSensorWrapper("ws://127.0.0.1:8000/mission_data/acquire")
+async def main():    
+    loop = asyncio.get_event_loop()
+    stop = asyncio.Event()
+    
+    wrp = FakeSensorWrapper(
+        "wss://echo.websocket.org",
+        loop
+    )
+    #wrp = FakeSensorWrapper("ws://127.0.0.1:8000/mission_data/acquire")
     
     
     try:
-        wrp.component.start()
-        wrp.component.join_threads()
-    except KeyboardInterrupt:
+        await wrp.run()
+        await stop.wait()
+    except asyncio.CancelledError:
         # Fallback for Windows (no signal handler)
-        logging.info("KeyboardInterrupt received, exiting...")
-        wrp.component.stop()
+        logging.info("Cancelleation received, exiting...")
+    finally:
+        await wrp.clean()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("KeyboardInterrupt received, exiting...")
+    except Exception as e:
+        raise e

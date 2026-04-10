@@ -4,6 +4,7 @@ import logging
 import janus
 
 from libs.component.component import ActuatorComponent
+from libs.thread_bridge import ThreadCoroutineBridge
 from libs.threads import RThread
 from libs.ws.client import WebSocketClient
 
@@ -14,16 +15,19 @@ class ThreadWsComponent(ActuatorComponent):
     websocket is the data broadcaster (send to other and receive from other)
     """
     
-    def __init__(self, thread: RThread, ws: WebSocketClient, queue_maxsize=1024):
-        super().__init__()
+    def __init__(self, thread: RThread, ws: WebSocketClient,
+                 queue_bridge: ThreadCoroutineBridge, async_event_loop: asyncio.AbstractEventLoop =None):
+        super().__init__(async_event_loop)
         self.thread = thread
         self.ws = ws
         
-        self.q = janus.Queue()
+        # TODO: will be removed
+        #self.q = janus.Queue()
         
         # Set queue
-        self.thread.sync_q = self.q.sync_q
-        self.ws.async_q = self.q.async_q
+        self.queue_bridge = queue_bridge
+        self.thread.queue_bridge = self.queue_bridge
+        self.ws.queue_bridge = self.queue_bridge
         
         # Task
         self.ws_task = None
@@ -37,46 +41,49 @@ class ThreadWsComponent(ActuatorComponent):
         
         try:
             await self.ws.connect()
+            logging.info("In ThreadWs, Ws socket connected")
         except Exception as e:
             logging.error("Can start the websocket")
             print(e)
         finally:
             await self.ws.close()
             
-    def start(self):
+    async def start(self):
         """
         Starts the actuactor and submit an async run task
         for the websocket
         """
         
-        if self.thread.sync_q is None:
+        if self.thread.queue_bridge is None:
             logging.error("Thread has no queue Set")
             return
         
-        if self.ws.async_q is None:
+        if self.ws.queue_bridge is None:
             logging.error("Ws has no queue Set")
             return
         
-        self.thread.start()
-        logging.info("Thread started")
-        
         self.started = True
         
-        self.ws_task = asyncio.run(self._run_ws())
-        logging.info("Ws scheduled for async")        
+        self.ws_task = self.async_event_loop.create_task(self._run_ws(),)
+        logging.info("Ws scheduled for async")     
+        
+        self.thread.start()
+        logging.info("Thread started")   
         
         
     def join_threads(self):
         """
         Join thread to wait for its'execution
+        
+        :returns: a coroutine to await
         """
         if not self.started:
             raise Exception("Start not called or has failed")
         
         logging.info("Starting joining thread")
-        self.thread.join()
+        return asyncio.to_thread(self.thread.join)
     
-    def stop(self):
+    async def stop(self):
         """
         Stops the current component
         """
@@ -85,7 +92,7 @@ class ThreadWsComponent(ActuatorComponent):
             self.thread.stop_event.set()
             logging.info("Thread set stop flag to true")
             
-            asyncio.run(self.q.aclose())
+            #asyncio.run(self.q.aclose())
             logging.info("Scheduled queue to close")
             
             if self.ws:
@@ -93,13 +100,14 @@ class ThreadWsComponent(ActuatorComponent):
             
             if self.ws_task is not None:
                 try:
-                    self.ws_task.result()
+                    await self.ws_task
+                    logging.info("In Stop, Ws task has finished")
                 except Exception as e:
                     pass
             
-            self.join_threads()
+            await self.join_threads()
             logging.info("Thread has stoped")
         except Exception as e:
-            logging.error("Exceptionoccured while stopping component")
+            logging.error("Exception occured while stopping component")
             print(e)
     
