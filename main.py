@@ -22,8 +22,8 @@ async def main():
     )
     #wrp = FakeSensorWrapper("ws://127.0.0.1:8000/mission_data/acquire")
     
-    rtcServer = RtcServer("wss://echo.websocket.org", loop)
-    
+    #rtcServer = RtcServer("wss://echo.websocket.org", loop)
+    rtcServer = RtcServer("ws://127.0.0.1:8000/system/rtc", loop)
     try:
         #await wrp.run()
         await rtcServer.run()
@@ -34,6 +34,7 @@ async def main():
         logging.info("Cancelleation received, exiting...")
     finally:
         #await wrp.clean()
+        print("Loop Event is alive: ", loop.is_running())
         await rtcServer.stop()
     
 
