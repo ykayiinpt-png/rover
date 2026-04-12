@@ -6,67 +6,64 @@ import janus
 from src.component.component import ActuatorComponent
 from src.thread_bridge import ThreadCoroutineBridge
 from src.threads import RThread
-from src.ws.client import WebSocketClient
+from src.ws.mqtt_client import MqttClient
 
 
-class ThreadWsComponent(ActuatorComponent):
+class ThreadMqttComponent(ActuatorComponent):
     """
     A component where the thread is the actuator and the
-    websocket is the data broadcaster (send to other and receive from other)
+    mqtt client is the data broadcaster (send to other and receive from other)
     """
     
-    def __init__(self, thread: RThread, ws: WebSocketClient,
+    def __init__(self, thread: RThread, mqtt: MqttClient,
                  queue_bridge: ThreadCoroutineBridge, async_event_loop: asyncio.AbstractEventLoop =None):
         super().__init__(async_event_loop)
         self.thread = thread
-        self.ws = ws
-        
-        # TODO: will be removed
-        #self.q = janus.Queue()
+        self.mqtt = mqtt
         
         # Set queue
         self.queue_bridge = queue_bridge
         self.thread.queue_bridge = self.queue_bridge
-        self.ws.queue_bridge = self.queue_bridge
+        self.mqtt.queue_bridge = self.queue_bridge
         
         # Task
-        self.ws_task = None
+        self.mqtt_task = None
         
         self.started = False
         
     
-    async def _run_ws(self):
+    async def _run_mqtt(self):
         """
         """
         
         try:
-            await self.ws.connect()
-            logging.info("In ThreadWs, Ws socket connected")
+            await self.mqtt.connect()
+            logging.info("[MQTT] In ThreadMqtt, Mqtt socket connected")
         except Exception as e:
-            logging.error("Can't start the websocket")
+            logging.error("[MQTT] Can't start the Mqtt client")
             print(e)
         finally:
-            await self.ws.close()
+            await self.mqtt.close()
             
     async def start(self):
         """
         Starts the actuactor and submit an async run task
-        for the websocket
+        for the MQTT client
         """
         
         if self.thread.queue_bridge is None:
-            logging.error("Thread has no queue Set")
+            logging.error("[MQTT] Thread has no queue Set")
             return
         
-        if self.ws.queue_bridge is None:
-            logging.error("Ws has no queue Set")
+        if self.mqtt.queue_bridge is None:
+            logging.error("[MQTT] Mqtt client queue has no queue Set")
             return
         
-        self.ws_task = self.async_event_loop.create_task(self._run_ws(),)
-        logging.info("Ws scheduled for async")     
+        self.mqtt_task = self.async_event_loop.create_task(self._run_mqtt(),)
+        logging.info("[MQTT] MqttClient scheduled for async")     
         
         self.thread.start()
-        logging.info("Thread started")
+        logging.info("[MQTT] Thread started")
         
         self.started = True   
         
@@ -78,9 +75,9 @@ class ThreadWsComponent(ActuatorComponent):
         :returns: a coroutine to await
         """
         if not self.started:
-            raise Exception("Start not called or has failed")
+            raise Exception("[MQTT] Start not called or has failed")
         
-        logging.info("Starting joining thread")
+        logging.info("[MQTT] Starting joining thread")
         return asyncio.to_thread(self.thread.join)
     
     async def stop(self):
@@ -90,26 +87,27 @@ class ThreadWsComponent(ActuatorComponent):
         try:
             # Set flag to true
             self.thread.stop_event.set()
-            logging.info("Thread set stop flag to true")
+            logging.info("[MQTT] Thread set stop flag to true")
             
             #asyncio.run(self.q.aclose())
-            logging.info("Scheduled queue to close")
+            logging.info("[MQTT] Scheduled queue to close")
             
-            if self.ws:
-                self.ws.request_shutdown()
+            if self.mqtt:
+                self.mqtt.request_shutdown()
             
-            if self.ws_task is not None:
+            if self.mqtt_task is not None:
                 try:
-                    await self.ws_task
-                    logging.info("In Stop, Ws task has finished")
-                    await self.ws.close()
-                    logging.info("Websocket closed")
+                    await self.mqtt_task
+                    logging.info("[MQTT] In Stop, Mqtt task has finished")
+                    
+                    await self.mqtt.close()
+                    logging.info("[MQTT] Mqtt client has been closed successfully.")
                 except Exception as e:
                     pass
             
             await self.join_threads()
-            logging.info("Thread has stoped")
+            logging.info("[MQTT] Thread has stoped")
         except Exception as e:
-            logging.error("Exception occured while stopping component")
+            logging.error("[MQTT] Exception occured while stopping component")
             print(e)
     
