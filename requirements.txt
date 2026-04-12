@@ -1,6 +1,7 @@
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.5
 aioice==0.10.2
+aiomqtt==2.5.1
 aiortc==1.13.0
 aiosignal==1.4.0
 async-timeout==5.0.1
@@ -17,6 +18,7 @@ janus==2.0.0
 multidict==6.7.1
 numpy==2.0.2
 opencv-python==4.13.0.92
+paho-mqtt==2.1.0
 propcache==0.4.1
 pycparser==2.23
 pyee==13.0.1
