@@ -172,23 +172,26 @@ class WebSocketClient:
                     self.request_shutdown()
                     return
                 
-                data = await self.queue_bridge.q_async.get()
-                if data is None:
-                    return
-
-                message = data
-                print("Data received from queue: ", message)
                 try:
-                    start = time.perf_counter()
-                    await ws.send(message) # TODO: use text=False to send binary
-                    logging.info(f"Sent: {message}")
-                    print("Time: ",  time.perf_counter() - start)
-                    
-                    # Wait
-                    await asyncio.sleep(self.sleep_time_send, loop=self.async_event_loop)
-                except ConnectionClosed:
-                    logging.info("Sender: connection closed")
-                    break
+                    data = self.queue_bridge.q_async.get_nowait()
+                    if data is not None:
+                        message = data
+                        print("Data received from queue: ", message)
+                        try:
+                            start = time.perf_counter()
+                            await ws.send(message) # TODO: use text=False to send binary
+                            logging.info(f"Sent: {message}")
+                            print("Time: ",  time.perf_counter() - start)
+                            
+                            # Wait
+                            await asyncio.sleep(self.sleep_time_send, loop=self.async_event_loop)
+                        except ConnectionClosed:
+                            logging.info("Sender: connection closed")
+                            break
+                except asyncio.QueueEmpty:
+                    pass
+                
+                await asyncio.sleep(0.001)
 
         except asyncio.CancelledError:
             logging.debug("Sender task cancelled")

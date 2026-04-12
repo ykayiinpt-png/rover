@@ -22,6 +22,9 @@ pycparser==2.23
 pyee==13.0.1
 pylibsrtp==0.12.0
 pyOpenSSL==26.0.0
+PyQt6==6.10.2
+PyQt6-Qt6==6.10.2
+PyQt6_sip==13.10.2
 typing_extensions==4.15.0
 websockets==15.0.1
 yarl==1.22.0

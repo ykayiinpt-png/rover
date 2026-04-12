@@ -11,8 +11,8 @@ class ThreadCoroutineBridge:
     
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self.loop = loop
-        self.q_async = asyncio.Queue(loop=self.loop)
-        self.q_sync = queue.Queue()
+        self.q_async = asyncio.Queue(loop=self.loop, maxsize=1000)
+        self.q_sync = queue.Queue(maxsize=1000)
         self.running = True
 
     def push_from_thread(self, data):
