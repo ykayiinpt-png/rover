@@ -13,7 +13,6 @@ from aiortc import RTCConfiguration, RTCIceCandidate, RTCIceServer, RTCPeerConne
 from src.rtc.track import RtcTrack
 from src.thread_bridge import ThreadCoroutineBridge
 from src.threads import RThread
-from src.ws.client import socketioClient
 from src.ws.socketio import SocketIoClient
 
 
@@ -70,9 +69,9 @@ class SocketIoRtcServer:
         self.negotiator_thread.start()
         logging.info("[SocketIoRtcServer] Thread started")
         
-        self.ws_task = self.loop.create_task(
-            self.ws.connect()
-        )
+        #self.ws_task = self.loop.create_task(
+        #    self.ws.connect()
+        #)
         logging.info("[SocketIoRtcServer] socketio task scheduled")
         
         self.started = True
@@ -98,37 +97,48 @@ class SocketIoRtcServer:
             # Set flag to true
             self.negotiator_thread.stop_event.set()
             logging.info("[SocketIoRtcServer] Thread set stop flag to true")
-            
-            #asyncio.run(self.q.aclose())
-            logging.info("[SocketIoRtcServer] Scheduled queue to close")
-            
-            if self.ws:
-                self.ws.request_shutdown()
+        
             
             if self.ws_task is not None:
                 try:
+                    logging.info(f"[SocketIoRtcServer] Waiting for ws task  (Socket io) task to end: loop is running: {self.loop.is_running()}")
                     await self.ws_task
-                    logging.info("[SocketIoRtcServer] In Stop, Ws task has finished")
                 except Exception as e:
-                    raise e
+                    logging.exception("[SocketIoRtcServer] Exception while closing the ws")
+                    #raise e
                     pass
+            logging.info(f"[SocketIoRtcServer] Waiting for ws (Socket io) task to end: loop is running: {self.loop.is_running()}")
+            if self.ws:
+                try:
+                    logging.info("[SocketIoRtcServer] Requesting shutdown")
+                    self.ws.request_shutdown()
+                    logging.info("[SocketIoRtcServer] In Stop, Ws task has finished")
+                    await self.ws.close()
+                    logging.info("[SocketIoRtcServer] In Stop, Ws task close method called")
+                except Exception as e:
+                    logging.exception("While closing socket")
+                    print(e)
             
-            logging.info("Gatehering pending tasks")
-            self.negotiator_thread.clean()
-            logging.info("Tasck completed")
-            
-            await self.join_threads()
-            logging.info("[SocketIoRtcServer] Thread has stoped")
+            try:
+                logging.info("Gatehering pending tasks")
+                await self.negotiator_thread.__clean()
+                logging.info("Tasck completed")
+                
+                await self.join_threads()
+                logging.info("[SocketIoRtcServer] Thread has stoped")
+            except Exception as e:
+                print(e)
             
             if self.video_track is not None:
                 try:
                     self.video_track.stop()
                 except Exception as e:
-                    print("[Exception] e: ", e)
+                    logging.exception("[SocketIoRtcServer] Video track stopping exception")
+                    print(e)
 
             logging.info("[SocketIoRtcServer] Video Queue Stoped")
         except Exception as e:
-            logging.error("[SocketIoRtcServer] Exception occured while stopping component")
+            logging.exception("[SocketIoRtcServer] Exception occured while stopping component")
             raise e
             
             
@@ -142,7 +152,7 @@ class RtcNegotiator(RThread):
     def __init__(self, rtc: SocketIoRtcServer, async_event_loop: asyncio.AbstractEventLoop):
         super().__init__()
         self.rtc = rtc
-        self.loop = async_event_loop
+        self.loop = None #async_event_loop
         self.pcs = set()
         self.video_track = None
         
@@ -150,7 +160,8 @@ class RtcNegotiator(RThread):
         
     
     def run(self):
-         # Create a loop for aiortc in the thread
+        # Create a loop for aiortc in the thread
+        # This maintain aiortc logics in the same event loop 
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
         
@@ -163,41 +174,48 @@ class RtcNegotiator(RThread):
             return
         
         try:
-            self.loop.run_until_complete(self._run())
+            asyncio.run(self._run())
         except Exception as e:
-            print("Error: ", str(e))
+            logging.exception("Running: ")
+            print(e)
         finally:
-            self.loop.close()
+            logging.info("Closing Rtc negotiator event loop...")
+            self.loop.stop()
         
     
     async def _run(self):
-        lock = threading.Lock()
+        try:
+            lock = threading.Lock()
     
-        self.ice_candidates_queue = []
-        
-        while not self.stop_event.is_set():
-            # We wait for message from the queue
-            # exchanged with the socketio
-            try:
-                message = self.queue_bridge.q_sync.get_nowait()
-                
-                await self.handle_socketio_message(message, lock)
-                
-            except queue.Empty:
-                pass
-            await asyncio.sleep(0.1)
+            self.ice_candidates_queue = []
+            
+            while not self.stop_event.is_set():
+                # We wait for message from the queue
+                # exchanged with the socketio
+                try:
+                    message = self.queue_bridge.q_sync.get_nowait()
                     
-        # We close all connection
-        logging.info("Closing all remaining peers connections")
-        await self.clean()
+                    await self.handle_socketio_message(message, lock)
+                except queue.Empty:
+                    pass
+                await asyncio.sleep(0.1)
+                        
+        except asyncio.CancelledError:
+            logging.warning("[RtcNegotiator] Cancelllation in side RTHread exception")
+            pass
+        finally:
+            # We close all connection
+            logging.info("[RtcNegotiator] Closing all remaining peers connections")
+            await self.__clean()
+                
+            logging.info("All peer connections closed")
+                
+            # Just to avoid empty queue blocking
+            self.queue_bridge.push_from_thread(None)
             
-        logging.info("All peer connections closed")
+            # Close the thread loop
+            self.loop.stop()
             
-        # Close the thread loop
-        #loop.stop()
-            
-        # Just to avoid empty queue blocking
-        self.queue_bridge.push_from_thread(None)
         
     async def handle_socketio_message(self, message: str, lock: threading.Lock):
         """
@@ -249,37 +267,36 @@ class RtcNegotiator(RThread):
             
             # Set offer and the answer 
             # We wait until it finished
-            #asyncio.run_coroutine_threadsafe(
             await self.handle_new_offer(pc, offer)
-            #        self.loop
-            #)
             
             # Wait for candidates to completes
-            # TODO
+            # TODO IMPORTANT
         elif data.get("type") == "candidate":
             candidate = RtcNegotiator.parse_candidate_dict(data['candidate'])
             
             pc = list(self.pcs)[0]
-            print("In candidate")
             
             if pc.remoteDescription is None:
                 self.ice_candidates_queue.append(candidate)
             else:
                 #asyncio.run_coroutine_threadsafe(
-                await self.handle_new_ice_candidate(pc, candidate),
-                #    loop=self.loop
-                #)
-                print("Candidate handled")
+                await self.handle_new_ice_candidate(pc, candidate)
             
         
-    async def clean(self):
+    async def __clean(self):
         if self.video_track is not None:
             self.video_track.stop()
             logging.info("[SocketIoRtcServer] Video track stopped")
-        
+            
         if self.loop.is_running():
             for task in self.loop_tasks:
-                await task
+                try:
+                    await task
+                except Exception as e:
+                    logging.warning("[RtcNegotiator] Exception while waiting for task in loop tasks")
+                    print(e)
+        else:
+            logging.warning("[RtcNegotiator] Event loop not running...")
                 
     async def handle_new_offer(self, pc: RTCPeerConnection, offer: RTCSessionDescription):
         await pc.setRemoteDescription(offer)

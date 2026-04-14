@@ -33,7 +33,7 @@ class SocketIoClient:
     
     #----------------- SIGNAL HANDLING -----------------
     def request_shutdown(self):
-        logging.info("Shutting Down the socketio client")
+        logging.info("[SocketIoClient] Shutting Down the socketio client")
         self.stop_event.set()
         
     #----------------- CORE CONNECTION -----------------
@@ -51,12 +51,12 @@ class SocketIoClient:
                     except Exception as e:
                         logging.warning('[SocketIO] Exception while adding message to queue')
                 
-                logging.info("SocketIo Client Connected")
+                logging.info("[SocketIoClient] SocketIo Client Connected")
                     
                 await self.handle_connection()
             except Exception as e:
                 print(e)
-                logging.exception("Unexpected exception occured")
+                logging.exception("[SocketIoClient] Unexpected exception occured")
             finally:
                 self._socketIo_client = None
                 
@@ -64,18 +64,20 @@ class SocketIoClient:
                 break
             
             
-            logging.info(f"[SocketIo] Reconnecting in {backoff} seconds...")
+            logging.info(f"[[SocketIoClient]] Reconnecting in {backoff} seconds...")
             await asyncio.sleep(backoff, loop=self.async_event_loop)
             backoff = min(backoff * 2, self.max_reconnec_relay)
             
             
-        logging.info("[SocketIo] Connected succeffully")
+        logging.info("[[SocketIoClient]] Connected succeffully")
         
     # ----------- MESSAGE LOOP
     
     async def handle_connection(self):
         receiver_task = self.async_event_loop.create_task(self.receiver())
         sender_task = self.async_event_loop.create_task(self.sender())
+        
+        logging.info("[SocketIoClient] Tasks created...")
         
         # We wait for all the tasks to end
         done, pending = await asyncio.wait(
@@ -93,8 +95,12 @@ class SocketIoClient:
         # Propagate exception if any
         for task in done:
             exc = task.exception()
+            print("Exc: ", exec)
             if exc:
+                print("Got exception here...")
                 raise exc
+            
+        logging.info("Handle ended...")
     
     async def receiver(self,):
         try:
@@ -170,7 +176,8 @@ class SocketIoClient:
         
         if self._socketIo_client:
             try:
-                await asyncio.wait_for(self._socketIo_client.disconnect())
+                logging.info("[SocketIo] Disconnecting")
+                await self._socketIo_client.disconnect()
                 logging.info("[SocketIo] Disconnected")
             except Exception as e:
                 logging.exception("[SocketIo] Error while closing socketio client")
