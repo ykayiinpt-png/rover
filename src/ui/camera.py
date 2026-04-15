@@ -11,12 +11,14 @@ class CameraAsyncProcess(Process):
     A wrapper for camera processing
     """
     
-    def __init__(self):
+    def __init__(self, io_url="http://127.0.0.1:8000"):
         super().__init__()
         
         self.stop_event = Event()
-        self.rtc_server = None
+        
+        self.io_url = io_url
         self.rtc_client = None
+        
         self.loop = None
     
     def run(self):
@@ -36,22 +38,14 @@ class CameraAsyncProcess(Process):
         
         print("Main Run")
         
-        self.rtc_server = SocketIoRtcServer(
-            "http://localhost:8000",
-            namespaces=["/rtc"],
-            async_event_loop=self.loop
-        )
         self.rtc_client = SocketIoRtcClient(
-            "http://localhost:8000",
+            self.io_url,
             namespaces=["/rtc"],
             async_event_loop=self.loop
         )
         
         try:
-            await asyncio.gather(
-                self.rtc_server.run(),
-                self.rtc_client.run(),
-                loop=self.loop)
+            await self.rtc_client.run()
             await stop.wait()
         except KeyboardInterrupt:
             pass
@@ -80,9 +74,6 @@ class CameraAsyncProcess(Process):
         
         tasks = []
 
-        if self.rtc_server:
-            tasks.append(asyncio.shield(self.rtc_server.stop()))
-
         if self.rtc_client:
             tasks.append(asyncio.shield(self.rtc_client.stop()))
 
@@ -92,7 +83,6 @@ class CameraAsyncProcess(Process):
             if isinstance(r, Exception):
                 logging.error(f"[CameraAsyncProcess] Shutdown Error: {r}")
 
-        self.rtc_server = None
         self.rtc_client = None
         
                 

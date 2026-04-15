@@ -44,7 +44,7 @@ class SocketIoRtcServer:
         self.negotiator_thread.queue_bridge = self.queue_bridge
         self.ws.queue_bridge = self.queue_bridge
     
-    async def run(self):
+    def run(self):
         if self.negotiator_thread.queue_bridge is None:
             logging.error("Thread has no queue Set")
             return
