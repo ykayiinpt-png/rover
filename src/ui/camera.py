@@ -2,6 +2,7 @@ import asyncio
 import logging
 from multiprocessing import Event, Process
 
+from src.rtc.client_socketio import SocketIoRtcClient
 from src.rtc.server_socketio import SocketIoRtcServer
 
 
@@ -15,6 +16,7 @@ class CameraAsyncProcess(Process):
         
         self.stop_event = Event()
         self.rtc_server = None
+        self.rtc_client = None
         self.loop = None
     
     def run(self):
@@ -35,58 +37,64 @@ class CameraAsyncProcess(Process):
         print("Main Run")
         
         self.rtc_server = SocketIoRtcServer(
-            "http://127.0.0.1:8000/rtc",
-            self.loop
+            "http://localhost:8000",
+            namespaces=["/rtc"],
+            async_event_loop=self.loop
+        )
+        self.rtc_client = SocketIoRtcClient(
+            "http://localhost:8000",
+            namespaces=["/rtc"],
+            async_event_loop=self.loop
         )
         
         try:
-            await self.rtc_server.run()
+            await asyncio.gather(
+                self.rtc_server.run(),
+                self.rtc_client.run(),
+                loop=self.loop)
             await stop.wait()
+        except KeyboardInterrupt:
+            pass
         except asyncio.CancelledError:
-            # Fallback for Windows (no signal handler)
-            logging.info("[Received Inside Camera Porcess] Cancelleation received, exiting...")
-            #stop.set()
-        except Exception as e:
-            logging.exception("In RtcAsyncProcess")
+            logging.warning("[RtcAsyncProcess] CancelledError fired")
             pass
         finally:
-            self.stop_event.set()
+            logging.info("\n Closing camera async process")
+            await self.__stop()
             
-            logging.info("\n Closing camera async process")            
-            try:
-                await asyncio.shield(self.rtc_server.stop(), loop=loop)
-            except asyncio.CancelledError:
-                logging.warning("Cleanup interrupted!")
-                
+            # Exi the  stop waiter
             stop.set()
+            
+            logging.info("[RtcAsyncProcess] Finally closed")
         
         
-    def stop(self):
+    async def __stop(self):
         """
         Stop the camera process
         
         INFORMATION: calling this outside the process will not pass variables value because
         it is a new process that has it's own memory
-        """
-        if self.stop_event.is_set():
-            logging.info("[RtcAsyncProcess] closing was already set")
-            return
-        
+        """        
         logging.info("[RtcAsyncProcess] Setting stooping down")
         self.stop_event.set()
         
+        tasks = []
+
         if self.rtc_server:
-            if self.loop and self.loop.is_running():
-                logging.info(f"[RtcAsyncProcess] Loop is running: {self.loop.is_running()}")
-                try:
-                    tsks = asyncio.gather([self.rtc_server.stop()], loop=self.loop)
-                    for tsk in tsks:
-                        tsk.result()
-                except Exception as e:
-                    logging.exception("Exception while stopping camera process", e)
-                    print(e)
-        else:
-            logging.info("[RtcAsyncProcess] No Rtc server")
+            tasks.append(asyncio.shield(self.rtc_server.stop()))
+
+        if self.rtc_client:
+            tasks.append(asyncio.shield(self.rtc_client.stop()))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for r in results:
+            if isinstance(r, Exception):
+                logging.error(f"[CameraAsyncProcess] Shutdown Error: {r}")
+
+        self.rtc_server = None
+        self.rtc_client = None
+        
                 
     
 

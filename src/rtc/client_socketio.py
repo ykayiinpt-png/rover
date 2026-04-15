@@ -4,24 +4,19 @@ import json
 import logging
 import queue
 import threading
-import time
 import uuid
 
-from aiortc import RTCConfiguration, RTCIceCandidate, RTCIceServer, RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCIceCandidate, RTCPeerConnection, RTCSessionDescription
 
-
-from src.rtc.track import RtcTrack
+from src.rtc.server_socketio import SocketIoRtcServer
 from src.thread_bridge import ThreadCoroutineBridge
 from src.threads import RThread
 from src.ws.socketio import SocketIoClient
 
 
-class SocketIoRtcServer:
+class SocketIoRtcClient:
     """
-    A server for serving camera video based on peer to peer connection.
-    
-    It use the WebRTC protocol and a socketio based signaling server. We only handle
-    on client connection for data exchange
+    Rtc client  with an webscoket based signaling server
     """
     
     def __init__(self, signal_server: str, namespaces: list[str], async_event_loop: AbstractEventLoop):
@@ -37,7 +32,7 @@ class SocketIoRtcServer:
         
         # The siganling server
         self.ws = SocketIoClient(uri=signal_server, namespaces=namespaces, async_event_loop=async_event_loop)
-        self.negotiator_thread = RtcNegotiator(self, async_event_loop)
+        self.negotiator_thread = RtcClientNegotiator(self, async_event_loop)
         
         self.ws_task = None
         
@@ -54,10 +49,10 @@ class SocketIoRtcServer:
             return
         
         self.negotiator_thread.start()
-        logging.info("[SocketIoRtcServer] Thread started")
+        logging.info("[SocketIoRtcClient] Thread started")
         
         self.ws_task = self.loop.create_task(self.ws.connect())
-        logging.info("[SocketIoRtcServer] socketio task scheduled")
+        logging.info("[SocketIoRtcClient] socketio task scheduled")
         
         self.started = True
         
@@ -81,67 +76,65 @@ class SocketIoRtcServer:
         try:
             # Set flag to true
             self.negotiator_thread.stop_event.set()
-            logging.info("[SocketIoRtcServer] Thread set stop flag to true")
+            logging.info("[SocketIoRtcClient] Thread set stop flag to true")
         
             
             if self.ws_task is not None:
                 try:
-                    logging.info(f"[SocketIoRtcServer] Waiting for ws task  (Socket io) task to end: loop is running: {self.loop.is_running()}")
+                    logging.info(f"[SocketIoRtcClient] Waiting for ws task  (Socket io) task to end: loop is running: {self.loop.is_running()}")
                     await self.ws_task
                 except asyncio.CancelledError:
-                    logging.warning("[SocketIoRtcServer] Cancelled in self.stop")
+                    logging.warning("[SocketIoRtcClient] Cancelled in self.stop")
                     raise
                 except Exception:
-                    logging.exception("[SocketIoRtcServer] Exception while closing the ws")
+                    logging.exception("[SocketIoRtcClient] Exception while closing the ws")
                     raise
-            logging.info(f"[SocketIoRtcServer] Waiting for ws (Socket io) task to end: loop is running: {self.loop.is_running()}")
+            logging.info(f"[SocketIoRtcClient] Waiting for ws (Socket io) task to end: loop is running: {self.loop.is_running()}")
             if self.ws:
-                logging.info("[SocketIoRtcServer] Requesting shutdown")
+                logging.info("[SocketIoRtcClient] Requesting shutdown")
                 self.ws.request_shutdown()
-                logging.info("[SocketIoRtcServer] In Stop, Ws task has finished")
+                logging.info("[SocketIoRtcClient] In Stop, Ws task has finished")
                     
                 await self.ws.close()
-                logging.info("[SocketIoRtcServer] In Stop, Ws task close method called")
+                logging.info("[SocketIoRtcClient] In Stop, Ws task close method called")
             
             logging.info("Gatehering pending tasks")
             await self.negotiator_thread.clean()
             logging.info("Tasck completed")
                 
             await self.join_threads()
-            logging.info("[SocketIoRtcServer] Thread has stoped")
+            logging.info("[SocketIoRtcClient] Thread has stoped")
         except asyncio.CancelledError:
-            logging.warning("[SocketIoRtcServer] Cancellation occured while stopping the RTC Server")
+            logging.warning("[SocketIoRtcClient] Cancellation occured while stopping the RTC Server")
             raise
         except Exception as e:
-            logging.exception("[SocketIoRtcServer] Exception occured while stopping component")
+            logging.exception("[SocketIoRtcClient] Exception occured while stopping component")
             raise e
         finally:
             if self.video_track is not None:
                 try:
                     self.video_track.stop()
                 except Exception as e:
-                    logging.exception("[SocketIoRtcServer] Video track stopping exception")
+                    logging.exception("[SocketIoRtcClient] Video track stopping exception")
                     print(e)
 
-            logging.info("[SocketIoRtcServer] Video Queue Stoped")
+            logging.info("[SocketIoRtcClient] Video Queue Stoped")
             
-            
-            
-            
-class RtcNegotiator(RThread):
+                    
+        
+class RtcClientNegotiator(RThread):
     """
-    Handle the offet, answer, ice candidate negotiation
-    between peers
+    Rtc client Negotiator
     """
     
     def __init__(self, rtc: SocketIoRtcServer, async_event_loop: asyncio.AbstractEventLoop):
         super().__init__()
         self.rtc = rtc
         self.loop = None #async_event_loop
-        self.pcs = set()
-        self.video_track = None
         
         self.loop_tasks = []
+        
+        self.pc = None
         
     
     def run(self):
@@ -150,14 +143,6 @@ class RtcNegotiator(RThread):
         loop = asyncio.new_event_loop()
         self.loop = loop
         asyncio.set_event_loop(loop)
-        
-        self.has_client = False
-        
-        try:
-            self.video_track = RtcTrack(self.rtc.camera_id) # TODO: search the video source id
-        except Exception as e:
-            logging.error("Can't load video track")
-            return
         
         try:
             asyncio.run(self._run())
@@ -172,29 +157,40 @@ class RtcNegotiator(RThread):
     async def _run(self):
         try:
             lock = threading.Lock()
-    
+            
+            
+                
+            await asyncio.sleep(2)
+            
+            
+            # Send the connect to the signaling server to initialize the 
+            # peer connections
+            self.queue_bridge.push_from_thread({
+                "namespace": "/rtc",
+                "payload": {
+                    "type": "connect",
+                }
+            })
+            
             self.ice_candidates_queue = []
             
             while not self.stop_event.is_set():
-                #print("Server Server")
                 # We wait for message from the queue
                 # exchanged with the socketio
                 try:
                     message = self.queue_bridge.q_sync.get_nowait()
-                    print("Message From server: ", message) 
                     
                     await self.handle_socketio_message(message, lock)
                 except queue.Empty:
-                    # print("Queue Empty")
                     pass
                 await asyncio.sleep(0.1)
                         
         except asyncio.CancelledError:
-            logging.warning("[RtcNegotiator] Cancelllation in side RTHread exception")
+            logging.warning("[RtcClientNegotiator] Cancelllation in side RTHread exception")
             raise
         finally:
             # We close all connection
-            logging.info("[RtcNegotiator] Closing all remaining peers connections")
+            logging.info("[RtcClientNegotiator] Closing all remaining peers connections")
             await self.clean()
                 
             logging.info("All peer connections closed")
@@ -206,7 +202,7 @@ class RtcNegotiator(RThread):
             self.loop.stop()
             
         
-    async def handle_socketio_message(self, message: str, lock: threading.Lock):
+    async def handle_socketio_message(self, message, lock: threading.Lock):
         """
         Handle socketio message
         """
@@ -215,119 +211,98 @@ class RtcNegotiator(RThread):
             return
         
         data  = dict()
-        
-        data  = dict()
         if type(message) == "str":
             try:
                 data = json.loads(message)
             except json.decoder.JSONDecodeError as e:
-                logging.warning(f"[SocketIoRtcServer] Can decode message: {message}")
+                logging.warning(f"[SocketIoRtcClient] Can decode message: {message}")
                 return
         else:
             data = message
             
-        print("In Server Handle socketio message")
-        
+        print("In handling socket io:", message)
+            
         if data.get("type") == "connect":
-            print("Data received Server: ", data)
+            print("Data received: Connect ", data)
             # We wonly allow on peer connection
             # So we discard any existing peer connection
             with lock:
-                if len(self.pcs) > 0:
-                    for pc in list(self.pcs):
-                        await self.close_pc(pc)
+                if self.pc is not None:
+                    await self.close_pc(self.pc)
+                    
+            self.pc = RTCPeerConnection()
+            self.pc.addTransceiver('audio', direction='inactive')
+            self.pc.addTransceiver("video", direction="recvonly")
             
-            # Register the new connection
-            pc = RTCPeerConnection()
-            pc_id = "PeerConnection(%s)" % uuid.uuid4()
+            @self.pc.on('track')
+            def handle_track(track):
+                print("\n\nTrack Received")
+                print(track)
+                print("\n\n\n")
             
-            self.pcs.add(pc)
-            pc.addTransceiver("video", direction="sendonly")
-            pc.addTrack(self.video_track)
+            # Create offer
+            offer = await self.pc.createOffer()
+            await self.pc.setLocalDescription(offer)
             
-            pc.on("connectionstatechange", lambda: self._handle_event_connection_change(pc))
-            pc.on("icecandidate", lambda candidate: self._handle_event_icecandidate(pc, candidate))
+            self.pc.on("connectionstatechange", lambda: self.__handle_event_connection_change(self.pc))
+            self.pc.on("icecandidate", lambda candidate: self.__handle_event_icecandidate(self.pc, candidate))
             
+            self.pc.on("track")
+            def handle_track(track):
+                print("Received Track:", track)
+                
+            # Send the offer to the signaling server
             self.queue_bridge.push_from_thread({
                 "namespace": "/rtc",
-                "payload": {"type": "connect", "status": "ok"}
+                "payload": {
+                    "type": "offer",
+                    "sdp": self.pc.localDescription.sdp
+                }
             })
+        
+        elif data.get("type") == "answer":
+            print("Data received: ", data)
             
-        elif data.get("type") == "offer":
-            print("\n\nData Received Server\n\n", data)
-            # We do receive an offer, we construct a session description
-            # from it
-            offer = RTCSessionDescription(
-                sdp=data["sdp"],
-                type=data["type"]
-            )
-            
-            pc = list(self.pcs)[0]
-            
-            # Set offer and the answer 
-            # We wait until it finished
-            await self.handle_new_offer(pc, offer)
-            
-            # Wait for candidates to completes
-            # TODO IMPORTANT
+            # Set the remote connection
+            await self.pc.setRemoteDescription(RTCSessionDescription(sdp=data["sdp"], type="answer"))
+                        
         elif data.get("type") == "candidate":
-            candidate = RtcNegotiator.parse_candidate_dict(data['candidate'])
+            candidate = RtcClientNegotiator.parse_candidate_dict(data['candidate'])
             
-            pc = list(self.pcs)[0]
-            
-            if pc.remoteDescription is None:
+            if self.pc.remoteDescription is None:
                 self.ice_candidates_queue.append(candidate)
             else:
-                #asyncio.run_coroutine_threadsafe(
-                await self.handle_new_ice_candidate(pc, candidate)
+                for ice in self.ice_candidates_queue:
+                    await self.handle_new_ice_candidate(self.pc, candidate)
+                
+                await self.handle_new_ice_candidate(self.pc, candidate)
             
         
     async def clean(self):
-        if self.video_track is not None:
-            self.video_track.stop()
-            logging.info("[SocketIoRtcServer] Video track stopped")
+        if self.pc is not None:
+            await self.pc.close()
+            logging.info("[SocketIoRtcClient] Video track stopped")
             
         if self.loop and self.loop.is_running():
             for task in self.loop_tasks:
                 try:
                     await task
                 except Exception as e:
-                    logging.warning("[RtcNegotiator] Exception while waiting for task in loop tasks")
+                    logging.warning("[RtcClientNegotiator] Exception while waiting for task in loop tasks")
                     print(e)
         else:
-            logging.warning("[RtcNegotiator] Event loop not running...")
-                
-    async def handle_new_offer(self, pc: RTCPeerConnection, offer: RTCSessionDescription):
-        await pc.setRemoteDescription(offer)
-        answer = await pc.createAnswer()
-        await pc.setLocalDescription(answer)
+            logging.warning("[RtcClientNegotiator] Event loop not running...")
         
-        self.queue_bridge.push_from_thread({
-            "namespace": "/rtc",
-            "payload": {
-                "type": answer.type,
-                "sdp": answer.sdp
-            }
-        })
-        
-    async def handle_new_ice_candidate(self, pc: RTCPeerConnection, ice_candidate: RTCIceCandidate):
-        print("Got ice_candidate: ", ice_candidate)
-        await pc.addIceCandidate(ice_candidate)
-    
-    async def close_pc(self, pc: RTCPeerConnection):
-        self.pcs.discard(pc)
-        if self.loop.is_running():
-            await pc.close()
-        
-    async def _handle_event_connection_change(self, pc: RTCPeerConnection):
+    async def __handle_event_connection_change(self, pc: RTCPeerConnection):
         if pc.connectionState in ["failed", "closed", "disconnected"]:
             if self.loop.is_running():
-                await pc.close()
-            self.pcs.discard(pc)
+                await self.pc.close()
+                
         elif pc.connectionState == "connected":
-            logging.info("We have a client")
+            logging.info("[RtcClientNegotiator] Connected")
             
-    async def _handle_event_icecandidate(self, pc, candidate):
+            
+    async def __handle_event_icecandidate(self, pc, candidate):
         print("Got Candidate")
         if candidate:
             print("Do have candidate:")
@@ -336,7 +311,7 @@ class RtcNegotiator(RThread):
                 "payload": {
                     "type": "candidate",
                     "candidate": candidate.to_sdp()
-                } 
+                }
             })
             
         
@@ -358,3 +333,4 @@ class RtcNegotiator(RThread):
             sdpMid=data.get("sdpMid"),
             # sdpMLineIndex=data.get("sdpMLineIndex")
         )
+

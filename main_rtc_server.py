@@ -44,7 +44,7 @@ def handle_message(data):
     print(data)
     print("### Message\n")
     
-    emit('response', data, include_self=False)
+    emit('response', data, broadcast=True, include_self=False, namespace="/rtc")
     
 
 if __name__ == "__main__":

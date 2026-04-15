@@ -28,7 +28,7 @@ def main():
     # A the end
     print("Stopping camera process")
     #camera.terminate()
-    camera.stop()
+    #camera.stop()
     camera.join()
 
 if __name__ == "__main__":
