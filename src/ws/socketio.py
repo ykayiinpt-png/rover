@@ -67,6 +67,8 @@ class SocketIoClient:
                 #self._socketIo_client.on('response', self.__handle_message)
                 
                 await self.handle_connection()
+            except socketio.exceptions.ConnectionError:
+                logging.error("[SocketIo] Can't connect to ws url. Reconnecting")
             except asyncio.CancelledError:
                 logging.warning("[SocketIo]  cancelled in connect")
                 raise
