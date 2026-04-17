@@ -10,7 +10,7 @@ import uuid
 from aiortc import RTCConfiguration, RTCIceCandidate, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 
 
-from src.rtc.track import RtcTrack
+from src.vstream.track import RtcTrack
 from src.thread_bridge import ThreadCoroutineBridge
 from src.threads import RThread
 from src.ws.client import WebSocketClient

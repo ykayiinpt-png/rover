@@ -45,7 +45,7 @@ class SocketIoClient:
     async def handle_message(self, msg):
         try:
             print("\n\n####Message")
-            print(msg)
+            #print(msg)
             print("####Message \n\n")
             
             await self.messages.put(msg)
@@ -57,7 +57,8 @@ class SocketIoClient:
         
         while not self.stop_event.is_set():
             try:
-                self._socketIo_client.on('response', self.handle_message, namespace="/rtc")
+                for sp in self.namespaces:
+                    self._socketIo_client.on('response', self.handle_message, namespace=sp)
                     
                 await self._socketIo_client.connect(url=self.uri, namespaces=self.namespaces)
                 self._socketIo_client_wait_task = self.async_event_loop.create_task(self._socketIo_client.wait())
@@ -147,7 +148,7 @@ class SocketIoClient:
             while not self.stop_event.is_set():
                 try:
                     msg = self.messages.get_nowait()
-                    print("[SocketIo] message received:", msg,)
+                    #print("[SocketIo] message received:", msg,)
                     print("[SocketIo] Type of message:", type(msg))
                     
                     # TODO: send back to thread

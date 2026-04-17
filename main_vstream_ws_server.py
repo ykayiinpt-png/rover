@@ -13,6 +13,8 @@ from multiprocessing import Event, Process
 import signal
 import time
 
+from src.vstream.ws.server_socketio import SocketIoVstreamServer
+
 
 logging.getLogger("aioice").setLevel(logging.DEBUG)
 logging.getLogger("aiortc").setLevel(logging.DEBUG)
@@ -24,7 +26,7 @@ from flask_socketio import SocketIO, emit
 from src.vstream.rtc.server_socketio import SocketIoRtcServer
 
 
-class RtcSocketIOServerProcess(Process):
+class VstreamWsSocketIOServerProcess(Process):
     """
     Process to start the flask app
     """
@@ -60,16 +62,16 @@ class RtcSocketIOServerProcess(Process):
             print(request.event["message"])
             print(request.event["args"])
             
-        @socketio.on('connect', namespace='/rtc')
+        @socketio.on('connect', namespace='/video')
         def handle_connect():
             print(f"Client connected: {request.sid}")
 
-        @socketio.on('disconnect', namespace='/rtc')
+        @socketio.on('disconnect', namespace='/video')
         def handle_disconnect():
             print(f"Client disconnected: {request.sid}")
 
 
-        @socketio.on('message', namespace='/rtc')
+        @socketio.on('message', namespace='/video')
         def handle_message(data):
             """
             Handle incoming message
@@ -78,7 +80,7 @@ class RtcSocketIOServerProcess(Process):
             print(data)
             print("### Message\n")
             
-            emit('response', data, broadcast=True, include_self=False, namespace="/rtc")
+            emit('response', data, broadcast=True, include_self=False, namespace="/video")
             
         
         # Background monitor to stop server
@@ -106,7 +108,7 @@ class VideoTrackProviderProcess(Process):
         
         self.server_url = server_url
         
-        self.rtc_server = None
+        self.vstream_server = None
         self.loop = None
     
     def run(self):
@@ -130,9 +132,9 @@ class VideoTrackProviderProcess(Process):
         
         logging.info("[VideoTrackProviderProcess] Video Track Event loop Set")
         
-        self.rtc_server = SocketIoRtcServer(
+        self.vstream_server = SocketIoVstreamServer(
             self.server_url,
-            namespaces=["/rtc"],
+            namespaces=["/video"],
             async_event_loop=self.loop
         )
         
@@ -140,7 +142,7 @@ class VideoTrackProviderProcess(Process):
         signal.signal(signal.SIGINT, self.handle_shutdown)
         
         try:
-            self.rtc_server.run()
+            self.vstream_server.run()
             
             # We wait until finisshed
             await self.stop_event.wait()
@@ -152,7 +154,7 @@ class VideoTrackProviderProcess(Process):
         finally:
             logging.info("[VideoTrackProviderProcess]\n Closing camera async process")
             await self.__stop()
-            
+        
             logging.info("[RtcAsyncProcess] Finally closed")
         
         
@@ -168,8 +170,8 @@ class VideoTrackProviderProcess(Process):
         
         tasks = []
 
-        if self.rtc_server:
-            tasks.append(asyncio.shield(self.rtc_server.stop()))
+        if self.vstream_server:
+            tasks.append(asyncio.shield(self.vstream_server.stop()))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -177,13 +179,13 @@ class VideoTrackProviderProcess(Process):
             if isinstance(r, Exception):
                 logging.error(f"[CameraAsyncProcess] Shutdown Error: {r}")
 
-        self.rtc_server = None
+        self.vstream_server = None
         
                 
     
 
 def main(host, port, ws_uri):
-    server = RtcSocketIOServerProcess(host=host, port=port)
+    server = VstreamWsSocketIOServerProcess(host=host, port=port)
     tracker = VideoTrackProviderProcess(server_url=ws_uri)
     
 

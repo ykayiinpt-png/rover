@@ -1,4 +1,5 @@
 import logging
+import sys
 
 from PyQt6.QtWidgets import QApplication
 
@@ -11,25 +12,16 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 
+logging.getLogger("aioice").setLevel(logging.DEBUG)
+logging.getLogger("aiortc").setLevel(logging.DEBUG)
 
 def main():
-    app = QApplication([])
-    
-    # Camera processing 
-    camera = CameraAsyncProcess()
-    camera.start()
-    logging.info("Camera process started")
+    app = QApplication(sys.argv)
 
     window = MainWindow()
     window.show()
 
     app.exec()
-    
-    # A the end
-    print("Stopping camera process")
-    #camera.terminate()
-    #camera.stop()
-    camera.join()
 
 if __name__ == "__main__":
     try:

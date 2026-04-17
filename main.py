@@ -4,7 +4,7 @@ import os
 import sys
 import threading
 
-from src.rtc.server import RtcServer
+from src.vstream.rtc.server import RtcServer
 from src.system.fake_sensor import FakeSensorWrapper
 from src.system.fake_sensor_mqtt import FakeSensorMqttWrapper
 from src.ws.client import WebSocketClient

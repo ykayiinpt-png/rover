@@ -10,7 +10,7 @@ import uuid
 from aiortc import RTCConfiguration, RTCIceCandidate, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 
 
-from src.rtc.track import RtcTrack
+from src.vstream.track import RtcTrack
 from src.thread_bridge import ThreadCoroutineBridge
 from src.threads import RThread
 from src.ws.socketio import SocketIoClient
@@ -138,7 +138,9 @@ class RtcNegotiator(RThread):
         super().__init__()
         self.rtc = rtc
         self.loop = None #async_event_loop
+        
         self.pcs = set()
+        self.pc = None
         self.video_track = None
         
         self.loop_tasks = []
@@ -154,12 +156,6 @@ class RtcNegotiator(RThread):
         self.has_client = False
         
         try:
-            self.video_track = RtcTrack(self.rtc.camera_id) # TODO: search the video source id
-        except Exception as e:
-            logging.error("Can't load video track")
-            return
-        
-        try:
             asyncio.run(self._run())
         except Exception as e:
             logging.exception("Running: ")
@@ -171,6 +167,9 @@ class RtcNegotiator(RThread):
     
     async def _run(self):
         try:
+            
+            self.video_track = RtcTrack(self.rtc.camera_id) # TODO: search the video source id
+     
             lock = threading.Lock()
     
             self.ice_candidates_queue = []
@@ -232,26 +231,30 @@ class RtcNegotiator(RThread):
             print("Data received Server: ", data)
             # We wonly allow on peer connection
             # So we discard any existing peer connection
+            print("Lenpcs: ", len(self.pcs))
             with lock:
                 if len(self.pcs) > 0:
                     for pc in list(self.pcs):
                         await self.close_pc(pc)
             
-            # Register the new connection
-            pc = RTCPeerConnection()
-            pc_id = "PeerConnection(%s)" % uuid.uuid4()
-            
-            self.pcs.add(pc)
-            pc.addTransceiver("video", direction="sendonly")
-            pc.addTrack(self.video_track)
-            
-            pc.on("connectionstatechange", lambda: self._handle_event_connection_change(pc))
-            pc.on("icecandidate", lambda candidate: self._handle_event_icecandidate(pc, candidate))
-            
-            self.queue_bridge.push_from_thread({
-                "namespace": "/rtc",
-                "payload": {"type": "connect", "status": "ok"}
-            })
+                # Register the new connection
+                self.pc = RTCPeerConnection(RTCConfiguration(
+                    iceServers=[]
+                ))
+                pc_id = "PeerConnection(%s)" % uuid.uuid4()
+                self.pc.on("connectionstatechange", lambda: self._handle_event_connection_change)
+                self.pc.on("icecandidate", self._handle_event_icecandidate)
+                
+                self.pc.addTransceiver("video", direction="sendonly")
+                self.pc.addTransceiver("audio", direction="inactive")
+                print("Self.video tRACK: ", self.video_track)
+                self.pc.addTrack(self.video_track)
+                
+                
+                self.queue_bridge.push_from_thread({
+                    "namespace": "/rtc",
+                    "payload": {"type": "connect", "status": "ok"}
+                })
             
         elif data.get("type") == "offer":
             print("\n\nData Received Server\n\n", data)
@@ -261,15 +264,15 @@ class RtcNegotiator(RThread):
                 sdp=data["sdp"],
                 type=data["type"]
             )
-            
-            pc = list(self.pcs)[0]
-            
+        
             # Set offer and the answer 
             # We wait until it finished
-            await self.handle_new_offer(pc, offer)
+            await self.handle_new_offer(offer)
             
             # Wait for candidates to completes
             # TODO IMPORTANT
+            for ice in self.ice_candidates_queue:
+                await self.handle_new_ice_candidate(pc, ice)
         elif data.get("type") == "candidate":
             candidate = RtcNegotiator.parse_candidate_dict(data['candidate'])
             
@@ -277,12 +280,15 @@ class RtcNegotiator(RThread):
             
             if pc.remoteDescription is None:
                 self.ice_candidates_queue.append(candidate)
-            else:
-                #asyncio.run_coroutine_threadsafe(
+            else:                    
                 await self.handle_new_ice_candidate(pc, candidate)
             
         
     async def clean(self):
+        
+        if self.pc is not None:
+            await self.pc.close()
+             
         if self.video_track is not None:
             self.video_track.stop()
             logging.info("[SocketIoRtcServer] Video track stopped")
@@ -297,18 +303,36 @@ class RtcNegotiator(RThread):
         else:
             logging.warning("[RtcNegotiator] Event loop not running...")
                 
-    async def handle_new_offer(self, pc: RTCPeerConnection, offer: RTCSessionDescription):
-        await pc.setRemoteDescription(offer)
-        answer = await pc.createAnswer()
-        await pc.setLocalDescription(answer)
+    async def handle_new_offer(self, offer: RTCSessionDescription):
+        print("\n\n\n\n\n\n\n")
+        print("Offer Got", offer)
+        print("\n\n\n\n\n\n\n")
+        await self.pc.setRemoteDescription(offer)
+        answer = await self.pc.createAnswer()
         
         self.queue_bridge.push_from_thread({
             "namespace": "/rtc",
             "payload": {
-                "type": answer.type,
-                "sdp": answer.sdp
+                "sdp": answer.sdp ,
+                "type": "answer"
             }
         })
+        
+        await asyncio.sleep(10)
+         
+        await self.pc.setLocalDescription(RTCSessionDescription(sdp=answer.sdp, type=answer.type))
+        
+        # Wait for ICE gathering to finish
+        while self.pc.iceGatheringState != "complete":
+            await asyncio.sleep(0.1)
+            print("Gathering ice")
+        
+        print("Ice gatjrered")
+        
+        print("\n\n\n\n\\n\n\n\n\n")
+        print(self.pc.localDescription.sdp)
+        print("\n\n\n\n\\n\n\n\n\n")
+        
         
     async def handle_new_ice_candidate(self, pc: RTCPeerConnection, ice_candidate: RTCIceCandidate):
         print("Got ice_candidate: ", ice_candidate)
@@ -319,15 +343,14 @@ class RtcNegotiator(RThread):
         if self.loop.is_running():
             await pc.close()
         
-    async def _handle_event_connection_change(self, pc: RTCPeerConnection):
-        if pc.connectionState in ["failed", "closed", "disconnected"]:
+    async def _handle_event_connection_change(self):
+        if self.pc.connectionState in ["failed", "closed", "disconnected"]:
             if self.loop.is_running():
-                await pc.close()
-            self.pcs.discard(pc)
-        elif pc.connectionState == "connected":
+                await self.pc.close()
+        elif self.pc.connectionState == "connected":
             logging.info("We have a client")
             
-    async def _handle_event_icecandidate(self, pc, candidate):
+    async def _handle_event_icecandidate(self, candidate):
         print("Got Candidate")
         if candidate:
             print("Do have candidate:")

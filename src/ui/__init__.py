@@ -1,27 +1,34 @@
+import logging
+
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtWidgets import QMainWindow, QPushButton, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QMainWindow, QPushButton, QWidget
+
+from src.ui.video.widgets import RtcTrackWidget
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.setWindowTitle("My App")
-        button = QPushButton("Press Me!")
-        button.setCheckable(True)
-        button.clicked.connect(self.handle_btn_clicked)
+        self.setWindowTitle("Rover SLAM")
         
-        self.setFixedSize(QSize(400, 300))
+        self.container = QWidget()
+        self.setCentralWidget(self.container)
         
-        self.setCentralWidget(button)
+        layout = QHBoxLayout()
         
-    def handle_btn_clicked(self):
-        print("Clicked")
+        # Components
+        self.rtc_track_widget = RtcTrackWidget(parent=self)
+        layout.addWidget(self.rtc_track_widget)
         
-    def closeEvent(self, a0):
+        self.container.setLayout(layout)
+        
+    def closeEvent(self, event):
         """
         We stop Process here
         """
+        logging.info("Closing Application UI")
+        self.rtc_track_widget.stop()
         
-        return super().closeEvent(a0)
+        event.accept()
         

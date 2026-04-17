@@ -2,8 +2,8 @@ import asyncio
 import logging
 from multiprocessing import Event, Process
 
-from src.rtc.client_socketio import SocketIoRtcClient
-from src.rtc.server_socketio import SocketIoRtcServer
+from src.vstream.rtc.client_socketio import SocketIoRtcClient
+from src.vstream.rtc.server_socketio import SocketIoRtcServer
 
 
 class CameraAsyncProcess(Process):
