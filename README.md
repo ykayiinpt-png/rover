@@ -3,6 +3,11 @@ pip install "av==14.4.0" --only-binary=:all:
 
 python main_rtc_server.py --host=0.0.0.0 --port=8000
 
+python main_vstream_ws_server.py --host=0.0.0.0 --port=8000
+
+
+python main_ui.py --ws_uri=http://localhost:8000
+
 
 ## Central Paltform
 - Ui

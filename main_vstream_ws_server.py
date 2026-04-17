@@ -155,7 +155,7 @@ class VideoTrackProviderProcess(Process):
             logging.info("[VideoTrackProviderProcess]\n Closing camera async process")
             await self.__stop()
         
-            logging.info("[RtcAsyncProcess] Finally closed")
+            logging.info("[VideoTrackProviderProcess] Finally closed")
         
         
     async def __stop(self):
@@ -177,7 +177,7 @@ class VideoTrackProviderProcess(Process):
 
         for r in results:
             if isinstance(r, Exception):
-                logging.error(f"[CameraAsyncProcess] Shutdown Error: {r}")
+                logging.error(f"[VideoTrackProviderProcess] Shutdown Error: {r}")
 
         self.vstream_server = None
         

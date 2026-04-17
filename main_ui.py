@@ -6,7 +6,6 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from src.ui import MainWindow
-from src.ui.camera import CameraAsyncProcess
 from src.ui.video.process import VstreamClientProcess
 
 

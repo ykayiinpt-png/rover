@@ -77,7 +77,7 @@ class VstreamClientProcess(Process):
         try:
             asyncio.run(self.main())
         except KeyboardInterrupt:
-            logging.info("[In CameraAsyncProcess] KeyboardInterrupt received, exiting...")
+            logging.info("[In VstreamClientProcess] KeyboardInterrupt received, exiting...")
             print("Loop is running:", self.loop.is_running())
         except Exception as e:
             logging.exception("[In Camera Async] Exception occured")
@@ -157,7 +157,7 @@ class VstreamClientProcess(Process):
 
         for r in results:
             if isinstance(r, Exception):
-                logging.error(f"[CameraAsyncProcess] Shutdown Error: {r}")
+                logging.error(f"[VstreamClientProcess] Shutdown Error: {r}")
 
         self.vstream_client = None
   
@@ -184,14 +184,14 @@ class RtcTrackClientProcess(Process):
         try:
             asyncio.run(self.main())
         except KeyboardInterrupt:
-            logging.info("[In CameraAsyncProcess] KeyboardInterrupt received, exiting...")
+            logging.info("[In RtcTrackClientProcess] KeyboardInterrupt received, exiting...")
             print("Loop is running:", self.loop.is_running())
         except Exception as e:
             logging.exception("[In Camera Async] Exception occured")
             raise e
         
     def handle_shutdown(self, signum, frame):
-        logging.info(f"[SocketIO] Received signal {signum}, shutting down...")
+        logging.info(f"[RtcTrackClientProcess] Received signal {signum}, shutting down...")
         self.stop_event.set()
     
     async def main(self):
@@ -261,7 +261,7 @@ class RtcTrackClientProcess(Process):
 
         for r in results:
             if isinstance(r, Exception):
-                logging.error(f"[CameraAsyncProcess] Shutdown Error: {r}")
+                logging.error(f"[RtcTrackClientProcess] Shutdown Error: {r}")
 
         self.rtc_client = None
         
