@@ -141,7 +141,7 @@ class RtcNegotiator(RThread):
         self.camera_id = camera_id
         
         self.encode_param = [cv2.IMWRITE_JPEG_QUALITY, 70]
-        self.target_size = (640, 480)
+        self.target_size = (320, 240)
     
     
     def run(self):
@@ -152,7 +152,6 @@ class RtcNegotiator(RThread):
                 print("In video streaming loop")
                 # We can read user redefined paramters from here
                 #try:
-                #    # Read frame form the camera
                 #    message = self.queue_bridge.q_sync.get_nowait()
                 #    print("Message From server: ", message) 
                 
@@ -168,12 +167,10 @@ class RtcNegotiator(RThread):
                     continue
                 
                 resized = cv2.resize(frame, self.target_size, interpolation=cv2.INTER_AREA)
-                rgb_frame = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
                 
-                success, buffer = cv2.imencode('.jpg', rgb_frame)
+                success, buffer = cv2.imencode('.jpg', resized)
                 if success:
                     frame_bytes = buffer.tobytes()
-                    print("Frame:", frame_bytes)
                     self.queue_bridge.push_from_thread({
                         "namespace": "/video",
                         "payload": frame_bytes
@@ -181,10 +178,11 @@ class RtcNegotiator(RThread):
                 else:
                     logging.warning("Encoding frame to jpg failed")
                     
-                time.sleep(1) # TODO: ajust                
+                time.sleep(0.01) # TODO: ajust                
                         
         except Exception:
             logging.exception("[RtcNegotiator] Exception in side RTHread exception")
+            raise
         finally:
             # We close all connection
             logging.info("[RtcNegotiator] Closing all remaining peers connections")
@@ -196,12 +194,12 @@ class RtcNegotiator(RThread):
             self.queue_bridge.push_from_thread(None)
             
         
-    async def clean(self):
+    def clean(self):
         self.stop_event.set()
         
         if self.cap is not None:
             self.cap.release()
             
-        logging.warning("[RtcNegotiator] clean")
+        logging.debug("[RtcNegotiator] vstream server clean")
                 
 

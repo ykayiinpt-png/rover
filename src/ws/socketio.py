@@ -18,10 +18,11 @@ class SocketIoClient:
         self.send_timeout = 30
         self.reconnec_relay = 3
         self.max_reconnec_relay = 30
-        self.sleep_time_send = 0.1
+        self.sleep_time_send = 0.0001
         
         self._socketIo_client = socketio.AsyncClient(
-            logger=True, engineio_logger=True
+            # TODO: logger
+            #logger=True, engineio_logger=True
         )
         self.namespaces = namespaces
         self._socketIo_client_wait_task = None
@@ -189,7 +190,7 @@ class SocketIoClient:
                     
                     if data is not None:
                         message = data
-                        print("Data received from queue: ", message)
+                        #print("Data received from queue: ", message)
                         try:
                             start = time.perf_counter()
                             await self._socketIo_client.emit("message", data["payload"], namespace=data.get("namespace"))

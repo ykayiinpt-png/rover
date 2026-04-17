@@ -26,14 +26,14 @@ class RtcTrackComputeThread(threading.Thread):
         while not self.stop_event.is_set():
             if not self.track_queue.empty():
                 frame = self.track_queue.get()
-                print(frame)
+                #print(frame)
                 logging.info("[RtcTrackComputeThread] Got Frame")
                 
                 # TODO: compute and push to compute result queue
                 self.compute_result_queue.put(frame)
             else:
-                print("RtcTrackComputerThread is empty")
-                time.sleep(1)
+                #print("RtcTrackComputerThread is empty")
+                time.sleep(0.01)
         
         logging.info("[RtcTrackComputeThread] Ended")
         
@@ -45,16 +45,30 @@ class RtcTrackComputeThread(threading.Thread):
 class VstreamClientProcess(Process):
     """
     Stream with websocket Client
+    
+    Frame are sent in bytes over a websocket channel
     """
     
     def __init__(self, compute_result_queue: multiprocessing.Queue,  io_url="http://127.0.0.1:8000"):
+        """
+        :param compute_result_queue: a multiprocessing queue where frame processing
+        result will be sent to
+        :param io_url: the socket io server url. It uses the namespace /video to communicate
+        """
+        
         super().__init__()
         
         self.stop_event = None
         
         self.io_url = io_url
         self.vstream_client = None
+        
+        """
+        Contains frame from the websocket client. It used by the processing logic thread to read
+        frame from as input
+        """
         self.track_queue = multiprocessing.Queue(maxsize=1000)
+        
         self.compute_result_queue = compute_result_queue
         
         self.loop = None
@@ -68,6 +82,8 @@ class VstreamClientProcess(Process):
         except Exception as e:
             logging.exception("[In Camera Async] Exception occured")
             raise e
+        finally:
+            self.track_queue.close()
         
     def handle_shutdown(self, signum, frame):
         logging.info(f"[SocketIO] Received signal {signum}, shutting down...")
@@ -117,6 +133,7 @@ class VstreamClientProcess(Process):
             
             self.computing_thread.request_stop()
             self.computing_thread.join()
+            self.close()
             
             logging.info("[RtcTrackClientProcess] Finally closed")
         

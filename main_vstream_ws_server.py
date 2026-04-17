@@ -16,8 +16,8 @@ import time
 from src.vstream.ws.server_socketio import SocketIoVstreamServer
 
 
-logging.getLogger("aioice").setLevel(logging.DEBUG)
-logging.getLogger("aiortc").setLevel(logging.DEBUG)
+#logging.getLogger("aioice").setLevel(logging.DEBUG)
+#logging.getLogger("aiortc").setLevel(logging.DEBUG)
 
 
 from flask import Flask, request
@@ -77,7 +77,7 @@ class VstreamWsSocketIOServerProcess(Process):
             Handle incoming message
             """
             print("\n### Message")
-            print(data)
+            #print(data)
             print("### Message\n")
             
             emit('response', data, broadcast=True, include_self=False, namespace="/video")

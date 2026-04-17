@@ -19,7 +19,7 @@ class RtcTrackController(QThread):
     Observe the RTC track and emit UI update with a Qimage
     """
     
-    def __init__(self, compute__result_queue: multiprocessing.Queue,  *args, **kwargs):
+    def __init__(self, compute_result_queue: multiprocessing.Queue,  *args, **kwargs):
         """
         :param queue: the computing result queue
         """
@@ -28,17 +28,17 @@ class RtcTrackController(QThread):
         
         self.signals = RtcTrackSignals(self)
         
-        self.compute__result_queue = compute__result_queue
+        self.compute_result_queue = compute_result_queue
         
         self.stop_event = threading.Event()
         
     def run(self):
         while not self.stop_event.is_set():
-            if not self.compute__result_queue.empty():
+            if not self.compute_result_queue.empty():
                 # We do have a numpy nd array here
                 # TODO: build image and send to image pyqslot
-                rgb_frame: np.ndarray = self.compute__result_queue.get()
-                print("Frame In Controller Widget: ", rgb_frame.shape)
+                rgb_frame: np.ndarray = self.compute_result_queue.get()
+                #print("Frame In Controller Widget: ", rgb_frame.shape)
                 
                 height, width, channel = rgb_frame.shape
                 bytes_per_line = channel * width
@@ -46,11 +46,11 @@ class RtcTrackController(QThread):
                 q_img = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
                 self.signals.image.emit(q_img)
             else:
-                print("Queue in Qthread is empty")
+                #print("Queue in Qthread is empty")
+                pass
                 
             # TODO revieww the timeR
-            time.sleep(1)
-            print("QThread running on track video")
+            time.sleep(0.0001)
         logging.info("[RtcTrackController] Thread ended")
     
     def stop(self):
@@ -63,22 +63,21 @@ class RtcTrackWidget(QWidget):
     Video track reader from RTC source
     """
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, compute_queue: multiprocessing.Queue , *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         # Objects
         """
         Frame processor result queue
         """
-        result_queue = multiprocessing.Queue()
         
-        self.controller = RtcTrackController(compute__result_queue=result_queue, parent=self)
+        self.controller = RtcTrackController(compute_result_queue=compute_queue, parent=self)
         
         # Views
         layout = QVBoxLayout()
         
         self.image_track_label = QLabel(text="Waiting for track...")
-        self.image_track_label.setFixedSize(QSize(100, 100))
+        self.image_track_label.setFixedSize(QSize(700, 500))
         
         layout.addWidget(self.image_track_label)
         
@@ -90,34 +89,19 @@ class RtcTrackWidget(QWidget):
         # Run
         self.controller.start()
         
-        # Start the video frame processing
-        self.processor_process =  VstreamClientProcess(compute_result_queue=result_queue) # RtcTrackClientProcess(compute_result_queue=result_queue)
-        self.processor_process.start()
-        
     
     def stop(self):
         # Stop all launched process here
         self.controller.stop()
         self.controller.signals.image.disconnect(self.update_frame)
+        self.controller.requestInterruption()
+        self.controller.quit()
+        self.controller.wait()
         
         try:
             self.controller.signals.image.disconnect()
         except Exception:
             pass
-        
-        # Stop the computing process
-        try:
-            self.processor_process.terminate()
-            logging.info('[RtcTrackWidget] teminate computing process')
-            self.processor_process.join(timeout=50)
-            logging.info('[RtcTrackWidget] joined computing process')
-
-
-            if self.processor_process.is_alive():
-                logging.warning('[RtcTrackWidget] killing computing process')
-                self.processor_processs.kill()   
-        except Exception as e:
-            logging.exception("Exception occured while stopping")
         
     
     def update_frame(self, image: QImage):

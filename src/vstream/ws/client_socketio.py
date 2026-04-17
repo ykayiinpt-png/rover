@@ -141,7 +141,7 @@ class VStreamWsClientNegotiator(RThread):
                     print("\n\n\n\n\n")
                     print("\n\n Data in Negotiator \n\n\n")
                     #print(message)
-                    print(type(message))
+                    #print(type(message))
                     print("\n\n\n\n\n")
                     
                     
@@ -163,7 +163,7 @@ class VStreamWsClientNegotiator(RThread):
                 except queue.Empty:
                     pass
                 
-                time.sleep(0.1)
+                #time.sleep(0.1)
                         
         except Exception:
             logging.warning("[VStreamWsClientNegotiator] Cancelllation in side RTHread exception")
