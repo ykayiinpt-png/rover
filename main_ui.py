@@ -28,12 +28,12 @@ def main(io_url: str):
         window = MainWindow(video_frame_compute_result_queue=video_frame_compute_result_queue)
         
         # Start the video frame processing
-        processor_process =  VstreamClientProcess(
-            compute_result_queue=video_frame_compute_result_queue,
-            io_url=io_url
-        ) 
+        #processor_process =  VstreamClientProcess(
+        #    compute_result_queue=video_frame_compute_result_queue,
+        #    io_url=io_url
+        #) 
         # RtcTrackClientProcess(compute_result_queue=result_queue)
-        processor_process.start()
+        #processor_process.start()
         
         window.show()
 
@@ -45,15 +45,16 @@ def main(io_url: str):
         print("In finally")
         # Stop the computing process
         try:
-            processor_process.terminate()
-            logging.info('[RtcTrackWidget] teminate computing process')
-            processor_process.join(timeout=50)
-            logging.info('[RtcTrackWidget] joined computing process')
+            if processor_process is not None:
+                processor_process.terminate()
+                logging.info('[RtcTrackWidget] teminate computing process')
+                processor_process.join(timeout=50)
+                logging.info('[RtcTrackWidget] joined computing process')
 
 
-            if processor_process.is_alive():
-                logging.warning('[RtcTrackWidget] killing computing process')
-                processor_process.kill()   
+                if processor_process.is_alive():
+                    logging.warning('[RtcTrackWidget] killing computing process')
+                    processor_process.kill()   
         except Exception as e:
             logging.exception("Exception occured while stopping")
     

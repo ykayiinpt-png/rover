@@ -76,10 +76,21 @@ class RtcTrackWidget(QWidget):
         # Views
         layout = QVBoxLayout()
         
-        self.image_track_label = QLabel(text="Waiting for track...")
-        self.image_track_label.setFixedSize(QSize(700, 500))
+        self.raw_image_track_label = QLabel(text="Waiting for track...")
+        self.raw_image_track_label.setFixedSize(QSize(320, 240))
+        self.raw_image_track_label.setStyleSheet("border: 2px solid #555555; border-radius: 5px;")
         
-        layout.addWidget(self.image_track_label)
+        self.processed_image_track_label = QLabel(text="Waiting for track...")
+        self.processed_image_track_label.setFixedSize(QSize(320, 240))
+        self.processed_image_track_label.setStyleSheet("border: 2px solid #555555; border-radius: 5px;")
+        
+        layout.addWidget(QLabel(text="Camera"))
+        layout.addSpacing(3)
+        layout.addWidget(self.raw_image_track_label)
+        layout.addSpacing(6)
+        layout.addWidget(QLabel(text="Camera - Processing"))
+        layout.addSpacing(3)
+        layout.addWidget(self.processed_image_track_label)
         
         # Bindings
         self.controller.signals.image.connect(self.update_frame)
@@ -106,6 +117,6 @@ class RtcTrackWidget(QWidget):
     
     def update_frame(self, image: QImage):
         try:
-            self.image_track_label.setPixmap(QPixmap.fromImage(image))
+            self.raw_image_track_label.setPixmap(QPixmap.fromImage(image))
         except Exception:
             logging.exception("While setting image")
