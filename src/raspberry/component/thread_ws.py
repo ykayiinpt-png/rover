@@ -3,7 +3,7 @@ import logging
 
 import janus
 
-from src.component.component import ActuatorComponent
+from src.raspberry.component.component import ActuatorComponent
 from src.thread_bridge import ThreadCoroutineBridge
 from src.threads import RThread
 from src.ws.client import WebSocketClient

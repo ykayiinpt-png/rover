@@ -5,7 +5,7 @@ import logging
 import time
 import random
 
-from src.component.thread_ws import ThreadWsComponent
+from src.raspberry.component.thread_ws import ThreadWsComponent
 from src.thread_bridge import ThreadCoroutineBridge
 from src.threads import RThread
 from src.ws.client import WebSocketClient

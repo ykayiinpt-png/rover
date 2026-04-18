@@ -149,7 +149,7 @@ class RtcNegotiator(RThread):
             self.cap = cv2.VideoCapture(0)
             print(f"\n\n\n\n\n {self.cap} \n\n\n\n\n\n\n\n\n")          
             while not self.stop_event.is_set():
-                print("In video streaming loop")
+                #print("In video streaming loop")
                 # We can read user redefined paramters from here
                 #try:
                 #    message = self.queue_bridge.q_sync.get_nowait()
@@ -178,7 +178,7 @@ class RtcNegotiator(RThread):
                 else:
                     logging.warning("Encoding frame to jpg failed")
                     
-                time.sleep(0.01) # TODO: ajust                
+                time.sleep(0.030) # 30 frame per second                
                         
         except Exception:
             logging.exception("[RtcNegotiator] Exception in side RTHread exception")

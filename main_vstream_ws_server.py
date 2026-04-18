@@ -225,14 +225,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--host",
+        "--io_host",
         type=str,
         default="0.0.0.0",
         help="Host (e.g. 0.0.0.0)"
     )
 
     parser.add_argument(
-        "--port",
+        "--io_port",
         type=int,
         default=8000,
         help="Port number (default: 8000)"
@@ -249,6 +249,6 @@ if __name__ == "__main__":
     
     
     try: 
-        main(args.host, args.port, args.ws_uri)
+        main(host=args.io_host, port=args.io_port, ws_uri=args.ws_uri)
     except Exception:
         pass

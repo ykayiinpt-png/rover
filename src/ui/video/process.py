@@ -27,7 +27,7 @@ class RtcTrackComputeThread(threading.Thread):
             if not self.track_queue.empty():
                 frame = self.track_queue.get()
                 #print(frame)
-                logging.info("[RtcTrackComputeThread] Got Frame")
+                #logging.info("[RtcTrackComputeThread] Got Frame")
                 
                 # TODO: compute and push to compute result queue
                 self.compute_result_queue.put(frame)
@@ -49,14 +49,16 @@ class VstreamClientProcess(Process):
     Frame are sent in bytes over a websocket channel
     """
     
-    def __init__(self, compute_result_queue: multiprocessing.Queue,  io_url="http://127.0.0.1:8000"):
+    def __init__(self, 
+                compute_result_queue: multiprocessing.Queue,  io_url="http://127.0.0.1:8000",
+                *args, **kwargs):
         """
         :param compute_result_queue: a multiprocessing queue where frame processing
         result will be sent to
         :param io_url: the socket io server url. It uses the namespace /video to communicate
         """
         
-        super().__init__()
+        super().__init__(*args, **kwargs)
         
         self.stop_event = None
         
@@ -84,6 +86,7 @@ class VstreamClientProcess(Process):
             raise e
         finally:
             self.track_queue.close()
+            self.track_queue.join_thread()
         
     def handle_shutdown(self, signum, frame):
         logging.info(f"[SocketIO] Received signal {signum}, shutting down...")

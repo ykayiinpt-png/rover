@@ -10,8 +10,8 @@ class RThread(threading.Thread):
     an infinite loop
     """
     
-    def __init__(self,):
-        threading.Thread.__init__(self)
+    def __init__(self, *args, **kwargs):
+        threading.Thread.__init__(self, *args, **kwargs)
         
         self.stop_event = threading.Event()
         

@@ -1,3 +1,4 @@
+import ast
 import asyncio
 from contextlib import suppress
 import json
@@ -5,6 +6,7 @@ import logging
 import time
 
 from aiomqtt import Client, MqttError, Topic
+from aiomqtt.types import SubscribeOptions
 
 from src.thread_bridge import ThreadCoroutineBridge
 
@@ -52,13 +54,13 @@ class MqttClient:
                 ) as client:
                     self._mqtt_client = client
                     
-                    logging.info("Mqqt Client Connected")
+                    logging.info("[MQTT]  Client Connected")
                     
                     for topic in self.topics:
                         print(topic)
                         topic_str = topic +  ""
                         
-                        await self._mqtt_client.subscribe(topic)
+                        await self._mqtt_client.subscribe(topic, options=SubscribeOptions(noLocal=True))
                         logging.info("[MQTT] Subscribed to topic:")
                     
                     await self.handle_connection(client)
@@ -115,8 +117,15 @@ class MqttClient:
                     print("[MQTT] message received:", msg,)
                     print("[MQTT] Type of message:", type(msg))
                     print("[MQTT] message received:", msg.payload)
+                    print("[MQTT] message received topic:", msg.topic)
+                    
+                    data = ast.literal_eval(msg.payload.decode('utf-8'))
                     
                     # TODO: send back to thread
+                    await self.queue_bridge.push_from_coroutin(data)
+                    print("Data sent to queue")
+                    
+                    await asyncio.sleep(0.001)
                 except asyncio.TimeoutError:
                     logging.info("Timeout not receiving message")
                     await asyncio.sleep(0.1)
@@ -142,6 +151,7 @@ class MqttClient:
                     return
                 
                 try:
+                    # TODO: change with not queue.empty()
                     data = self.queue_bridge.q_async.get_nowait()
                     
                     if data is not None:

@@ -7,8 +7,8 @@ import random
 
 from aiomqtt import Topic
 
-from src.component.thread_mqtt import ThreadMqttComponent
-from src.component.thread_ws import ThreadWsComponent
+from src.raspberry.component.thread_mqtt import ThreadMqttComponent
+from src.raspberry.component.thread_ws import ThreadWsComponent
 from src.thread_bridge import ThreadCoroutineBridge
 from src.threads import RThread
 from src.ws.client import WebSocketClient

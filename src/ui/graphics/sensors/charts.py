@@ -1,6 +1,10 @@
+import logging
+import multiprocessing
 import random
+import threading
+import time
 from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget, QPushButton
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 import pyqtgraph as pg
 
 # Enable antialiasing for prettier plots
@@ -18,6 +22,8 @@ Dark Blue #082a54 → rgb(8, 42, 84)
 class UltraSoundsCharts(QWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        self.draw_lock = threading.Lock()
         
         layout = QVBoxLayout()
         
@@ -84,14 +90,12 @@ class UltraSoundsCharts(QWidget):
         self.timer = QTimer()
         self.timer.setInterval(300)
         self.timer.timeout.connect(self.slot_update_plot)
-        self.timer.start()
+        #self.timer.start()
         
     
     def format_data_to_str(self, f, b, l, r):
         return f"F: {f:05.2f} cm | B: {b:05.2f} cm | L: {l:05.2f} cm | R: {r:05.2f} cm"
         
-    def slot_ultrasound_btn_checked(self, event):
-        pass
         
     def slot_update_plot(self):
         #self.time = self.time[1:]
@@ -111,13 +115,80 @@ class UltraSoundsCharts(QWidget):
                 self.distances["r"][-1])
         )
         
+    def update_charts(self, dict_arr):
+        with self.draw_lock:
+            for k in ["f", "b", "l", "r"]:
+                l = len(self.distances[k])
+                print("Before Cropped", l)
+                self.distances[k] = self.distances[k] + dict_arr[k]
+                self.distances[k] = self.distances[k][len(self.distances[k]) - l:]
+                
+                print("After Cropped", len(self.distances[k]))
+                
+                self.lines[k].setData(self.time, self.distances[k])
+        
+            self.ultrasound_values_label.setText(
+                self.format_data_to_str(
+                    self.distances["f"][-1],
+                    self.distances["b"][-1],
+                    self.distances["l"][-1],
+                    self.distances["r"][-1])
+            )
+
+        
     def stop(self):
         self.timer.stop()
+        try:
+            self.draw_lock.release()
+            self.draw_lock.release_lock()
+        except Exception as e:
+            pass
+        
 
-class SensorCharts(QWidget):
-    def __init__(self, *args, **kwargs):
+class SensorsChartSignals(QObject):
+    ultra_sounds_data = pyqtSignal(dict)
+    
+class SensorsChartsContorller(QThread):
+    def __init__(self, data_queue: multiprocessing.Queue, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
+        self.signals = SensorsChartSignals()
+        self.stop_event = threading.Event()
+        
+        self.data_queue = data_queue
+        
+    def run(self):
+        while not self.stop_event.is_set():
+            if not self.data_queue.empty():
+                data = self.data_queue.get()
+                print("Data in Widget: ", data)
+                
+                if type(data) is dict:
+                    for k in data.keys():
+                        if type(data[k])  is not list:
+                            data[k] = [data[k]]
+                
+                self.signals.ultra_sounds_data.emit(data)
+            else:
+                #print("Queue in Qthread is empty")
+                pass
+                
+            # TODO revieww the timeR
+            time.sleep(0.0001)
+        logging.info("[SensorsChartsContorller] Thread ended")
+    
+    def stop(self):
+        logging.info("QThread stop fired")
+        self.stop_event.set()
+
+class SensorCharts(QWidget):
+    def __init__(self, data_queue: multiprocessing.Queue,  *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Objects
+        self.controller = SensorsChartsContorller(data_queue=data_queue)
+        
+        # Views
         layout = QVBoxLayout()
         
         # Wdigets'
@@ -126,8 +197,29 @@ class SensorCharts(QWidget):
         
         layout.addWidget(self.ultrasounds_widget)
         
+        # bindings
+        self.controller.signals.ultra_sounds_data.connect(self.slot_update_utltra_sounds_chart)
+        
         self.setLayout(layout)
+        
+        # Run
+        self.controller.start()
         
     def stop(self):
         self.ultrasounds_widget.stop()
+        
+        self.controller.stop()
+        self.controller.signals.ultra_sounds_data.disconnect(self.slot_update_utltra_sounds_chart)
+        self.controller.requestInterruption()
+        self.controller.quit()
+        self.controller.wait()
+        
+        try:
+            self.controller.signals.image.disconnect()
+        except Exception:
+            pass
+        
+    def slot_update_utltra_sounds_chart(self, data: dict):
+        print("Data in slot", data)
+        self.ultrasounds_widget.update_charts(data)
         

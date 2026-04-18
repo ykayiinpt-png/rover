@@ -102,7 +102,6 @@ class RtcTrackWidget(QWidget):
         
     
     def stop(self):
-        # Stop all launched process here
         self.controller.stop()
         self.controller.signals.image.disconnect(self.update_frame)
         self.controller.requestInterruption()

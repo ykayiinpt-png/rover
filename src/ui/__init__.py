@@ -6,14 +6,16 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QPushButton, QVBox
 
 from src.ui.detection import DetectionWidget
 from src.ui.log import LogWidget
-from src.ui.map.map import MapWidget
-from src.ui.sensors.charts import SensorCharts
+from src.ui.graphics.map.map import MapWidget
+from src.ui.graphics.sensors.charts import SensorCharts
 from src.ui.sidebar import Sidebar
 from src.ui.video.widgets import RtcTrackWidget
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, video_frame_compute_result_queue: multiprocessing.Queue):
+    def __init__(self,
+                video_frame_compute_result_queue: multiprocessing.Queue,
+                sensors_data_queue: multiprocessing.Queue, map_data_queue: multiprocessing.Queue):
         super().__init__()
         
         self.setWindowTitle("Rover SLAM")
@@ -24,7 +26,7 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout()
         
         # Components
-        self.sensors_chart = SensorCharts()
+        self.sensors_chart = SensorCharts(data_queue=sensors_data_queue)
         layout.addWidget(self.sensors_chart)
         
         self.rtc_track_widget = RtcTrackWidget(parent=self, compute_queue=video_frame_compute_result_queue)

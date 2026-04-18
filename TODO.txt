@@ -1,0 +1,3 @@
+[] Close queue before sockets(ws, mqtt)
+[] Check socket available before sending data
+[] Restart crashed processes
