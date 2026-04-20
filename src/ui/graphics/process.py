@@ -43,6 +43,9 @@ class RaspberryDataAckMqtt(RThread):
                     for k, v in payload.items():
                         if k in ["u_f", "u_b", "u_l", "u_r"]:
                             data[k.replace("u_", "")] = v
+                    
+                    data["time"] = payload["time"]
+                    data["batch_dt"] = payload["batch_dt"]
                 
                 
                 

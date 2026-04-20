@@ -2,7 +2,7 @@ import logging
 import multiprocessing
 import random
 import time
-
+from datetime import datetime, timezone
 
 class RaspberryPi:
     """
@@ -19,6 +19,7 @@ class RaspberryPi:
     
     def run(self):
         while not self.stop_event.is_set():
+            current_timestamp = datetime.now(timezone.utc).timestamp()
             # 1. Acquire data from GPIO
             # 2. Apply filters
             # 3. Push data to remote server (scheduling with queue)
@@ -26,6 +27,15 @@ class RaspberryPi:
             data = {
                 "topic": "slam/sensors/data",
                 "payload": {
+                    # The start time of the data acquisition
+                    "time": current_timestamp,
+                    
+                    # For each type or category of sensors we do have
+                    # different acquition frequency. So the batch_dt
+                    # the difference in secons between two acquisitions
+                    # u is ofr ultration g is gyroscope
+                    # It will be used in case we do have array
+                    "batch_dt": {"u": 1},
                     # Ultrasound
                     "u_f": random.random() * 100,
                     "u_b": random.random() * 100,

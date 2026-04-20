@@ -3,12 +3,16 @@ import multiprocessing
 import random
 import threading
 import time
+from datetime import datetime, timezone
+
+
 from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget, QPushButton
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 import pyqtgraph as pg
+import numpy as np
 
 # Enable antialiasing for prettier plots
-pg.setConfigOptions(antialias=True)
+pg.setConfigOptions(antialias=False)
 
 """
 Gray #cecece → rgb(206, 206, 206)
@@ -40,7 +44,7 @@ class UltraSoundsCharts(QWidget):
             "l": pg.mkPen(color="#C586C0", width=pen_width),
             "r": pg.mkPen(color="#B5CEA8", width=pen_width)
         }
-        styles = {"color": "white", "font-size": "5px"}
+        styles = {"color": "white", "font-size": "10px"}
         #self.plot_graph.setLabel("left", "cm", **styles)
         #self.plot_graph.setLabel("bottom", "Time (s)", **styles)
         
@@ -53,14 +57,17 @@ class UltraSoundsCharts(QWidget):
             self.plot_graphs[k].setLabel("bottom", "time (ms)", **styles)
             self.plot_graphs[k].showGrid(x=True, y=True)
             self.plot_graphs[k].setYRange(0, 150)
+            self.plot_graphs[k].setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
             
         
-        self.time = list(range(20))
+        time_now = datetime.now(timezone.utc).timestamp()
+        self.graph_window_size = 20
+        self.time = np.array([time_now - i for i in range(self.graph_window_size)])
         self.distances = {
-            "f": [random.randint(0, 100) for _ in range(20)],
-            "b": [random.randint(0, 100) for _ in range(20)],
-            "l": [random.randint(0, 100) for _ in range(20)],
-            "r": [random.randint(0, 100) for _ in range(20)],
+            "f": np.zeros(self.graph_window_size),
+            "b": np.zeros(self.graph_window_size),
+            "l": np.zeros(self.graph_window_size),
+            "r": np.zeros(self.graph_window_size),
         }
         
         # Get a line reference
@@ -98,12 +105,12 @@ class UltraSoundsCharts(QWidget):
         
         
     def slot_update_plot(self):
-        #self.time = self.time[1:]
-        #self.time.append(self.time[-1] + 1)
+        self.time = np.roll(self.time, -1)
+        self.time[-1] = self.time[-2] + 1
         
         for k in ["f", "b", "l", "r"]:
-            self.distances[k] = self.distances[k][1:]
-            self.distances[k].append(random.randint(0, 100))
+            self.distances[k] = np.roll(self.distances[k], -1)
+            self.distances[k][-1] = random.randint(0, 100)
             
             self.lines[k].setData(self.time, self.distances[k])
             
@@ -117,12 +124,22 @@ class UltraSoundsCharts(QWidget):
         
     def update_charts(self, dict_arr):
         with self.draw_lock:
+            # Update the time array
+            if len(dict_arr["f"]) >= self.graph_window_size:
+                self.time = [ dict_arr["time"] + i * dict_arr["batch_dt"]["u"] for i in range(self.graph_window_size)]
+            else:
+                self.time = np.roll(self.time, -1)
+                self.time[-1] = dict_arr["time"]
+            
+            # Update sensors data plot
             for k in ["f", "b", "l", "r"]:
-                l = len(self.distances[k])
-                print("Before Cropped", l)
-                self.distances[k] = self.distances[k] + dict_arr[k]
-                self.distances[k] = self.distances[k][len(self.distances[k]) - l:]
-                
+                l = len(dict_arr[k])
+                if l >= self.graph_window_size:
+                    self.distances[k][:] = dict_arr[k][-self.window_size:]
+                else:
+                    self.distances[k][:-l] = self.distances[k][l:]
+                    self.distances[k][-l:] = dict_arr[k]
+                    
                 print("After Cropped", len(self.distances[k]))
                 
                 self.lines[k].setData(self.time, self.distances[k])
@@ -165,7 +182,7 @@ class SensorsChartsContorller(QThread):
                 
                 if type(data) is dict:
                     for k in data.keys():
-                        if type(data[k])  is not list:
+                        if (k in ["f", "b", "l", "r"]) and (type(data[k]) is not list):
                             data[k] = [data[k]]
                 
                 self.signals.ultra_sounds_data.emit(data)
