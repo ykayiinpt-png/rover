@@ -10,7 +10,7 @@ class DetectionWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("YOLO Detections")
-        self.setFixedSize(320, 240)
+        self.setFixedSize(270, 240)
 
         layout = QVBoxLayout()
 

@@ -5,13 +5,13 @@ from PyQt6.QtCore import Qt, QTimer, QPointF
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QImage
 
 class MapWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setFixedSize(640, 240)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setFixedSize(440, 240)
         self.setMouseTracking(True)
 
         # ---------------- MAP ----------------
-        self.map = np.random.randint(0, 255, (240, 640), dtype=np.uint8)
+        self.map = np.random.randint(0, 255, (240, 440), dtype=np.uint8)
 
         # ---------------- CAMERA ----------------
         self.zoom = 1.0
@@ -110,8 +110,8 @@ class MapWidget(QWidget):
         # ================= MAP LAYER =================
         if self.show_map:
             h, w = self.map.shape
-            print((h, w))
-            print(int(w * self.zoom), int(h * self.zoom))
+            #print((h, w))
+            #print(int(w * self.zoom), int(h * self.zoom))
             image = QImage(self.map.data, w, h, w, QImage.Format.Format_Grayscale8)
 
             # TODO: Be reviewed later
@@ -162,10 +162,3 @@ class MapWidget(QWidget):
             painter.setBrush(QBrush(QColor(255, 0, 0)))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(int(r.x()) - 6, int(r.y()) - 6, 12, 12)
-            
-# ---------- RUN ----------
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    w = MapWidget()
-    w.show()
-    sys.exit(app.exec())

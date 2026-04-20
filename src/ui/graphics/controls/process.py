@@ -9,19 +9,20 @@ from src.threads import RThread
 from src.ws.mqtt_client import MqttClient
 
 
-class RaspberryDataAckMqtt(RThread):
+class RaspberryCommandsAckMqtt(RThread):
     """
-    Data acquisition handler from remote broker.
+    Commands exchanges between the current app and the rapberry
     
-    It acquire sensors data and necessary data for plotting and
-    computation.
+    It sends commands to the raspberry pi and receives also commands
+    from the raspberry pi. Command received are actions triggered by the
+    raspberry itself
     """
     
-    def __init__(self, map_data_queue: multiprocessing.Queue, sensors_data_queue: multiprocessing.Queue):
+    def __init__(self, send_queue: multiprocessing.Queue, receive_queue: multiprocessing.Queue):
         super().__init__()
         
-        self.map_result_data_queue = map_data_queue
-        self.sensors_result_data_queue = sensors_data_queue
+        self.send_queue = send_queue
+        self.receive_queue = receive_queue
         
     def run(self):
         while not self.stop_event.is_set():
@@ -32,47 +33,33 @@ class RaspberryDataAckMqtt(RThread):
                 print(payload)
                 print(type(payload))
                 
-                # For sensors, we receive somthing like this
-                # for ultrasounds
-                #{'u_f': 3.2060321054356744, 'u_b': 22.689679053200752, 'u_l': 68.26021586457152, 'u_r': 4.3811363690471}
-                
-                
-                data = {}
-                
-                if type(payload) is dict:
-                    for k, v in payload.items():
-                        if k in ["u_f", "u_b", "u_l", "u_r"]:
-                            data[k.replace("u_", "")] = v
-                    
-                    data["time"] = payload["time"]
-                    data["batch_dt"] = payload["batch_dt"]
-                
-                
-                
-                self.sensors_result_data_queue.put(data)
-                
-                # TODO: push to map queue also
-            else:
-                #print("Queue for Raspberry is empty")
-                pass
+                self.receive_queue.put(payload)
+            
+            # We do have somthing to send
+            if not self.send_queue.empty():
+                data = self.send_queue.get()
+                self.queue_bridge.push_from_thread({
+                    "topic": data.get("topic", "all"),
+                    "payload": data.get("payload")
+                })
             
             time.sleep(0.01)
         
-        logging.info("[RaspberryDataAckMqtt] Thread stop event up")
+        logging.info("[RaspberryCommandsAckMqtt] Thread stop event up")
         
     def stop(self):
-        logging.info("[RaspberryDataAckMqtt] Requested stop...")
+        logging.info("[RaspberryCommandsAckMqtt] Requested stop...")
         self.stop_event.set()
 
 
 
-class RaspberryDataExchangeProcess(multiprocessing.Process):
+class RaspberryCommandsAckProcess(multiprocessing.Process):
     """
-    Data exchange with an autonous system, a raspberry pi
+    Commands exchange with an autonous system, a raspberry pi
     """
     
     def __init__(self, host: str, port: int, 
-                 map_data_queue: multiprocessing.Queue, sensors_data_queue: multiprocessing.Queue,
+                 send_queue: multiprocessing.Queue, receive_queue: multiprocessing.Queue,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -83,19 +70,17 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
         self.mqtt_client = None
         
         
-        self.data_queue = multiprocessing.Queue(maxsize=1000)
-        
-        self.map_result_data_queue = map_data_queue
-        self.sensors_result_data_queue = sensors_data_queue
+        self.send_queue = send_queue
+        self.receive_queue = receive_queue
         
     def run(self):
         try:
             asyncio.run(self.main())
         except KeyboardInterrupt:
-            logging.info("[In VstreamClientProcess] KeyboardInterrupt received, exiting...")
+            logging.info("[RaspberryCommandsAckProcess] KeyboardInterrupt received, exiting...")
             print("Loop is running:", self.loop.is_running())
         except Exception as e:
-            logging.exception("[In Camera Async] Exception occured")
+            logging.exception("[RaspberryCommandsAckProcess] Exception occured")
             raise e
         finally:
             self.data_queue.close()
@@ -109,14 +94,14 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
         self.mqtt_client = MqttClient(
             uri=self.host, port=self.port,
             # Only topics for data reception
-            topics=["slam/sensors/data"],
+            topics=["slam/commands/remote"],
             async_event_loop=loop
         )
         
         self.component = ThreadMqttComponent(
-            RaspberryDataAckMqtt(
-                map_data_queue=self.map_result_data_queue,
-                sensors_data_queue=self.sensors_result_data_queue
+            RaspberryCommandsAckMqtt(
+                send_queue=self.send_queue,
+                receive_queue=self.receive_queue
             ),
             self.mqtt_client,
             ThreadCoroutineBridge(loop),
@@ -131,13 +116,13 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
         except KeyboardInterrupt:
             pass
         except asyncio.CancelledError:
-            logging.warning("[RaspberryDataExchangeProcess] CancelledError fired")
+            logging.warning("[RaspberryCommandsAckProcess] CancelledError fired")
             pass
         finally:
-            logging.info("[RaspberryDataExchangeProcess] Closing async process")
+            logging.info("[RaspberryCommandsAckProcess] Closing async process")
             await self.stop()
         
-            logging.info("[RaspberryDataExchangeProcess] Finally closed")
+            logging.info("[RaspberryCommandsAckProcess] Finally closed")
             
     async def stop(self):
         self.stop_event.set()

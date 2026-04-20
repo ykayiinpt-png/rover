@@ -4,7 +4,9 @@ import multiprocessing
 import os
 import sys
 
+from src.ui.graphics.controls.process import RaspberryCommandsAckProcess
 from src.ui.graphics.process import RaspberryDataExchangeProcess
+from src.ui.log import LogWidget
 
 if sys.platform.lower() == "win32" or os.name.lower() == "nt":
         print("Setting event policy...")
@@ -30,9 +32,14 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
     video_frame_compute_result_queue = None
     map_data_queue = None
     sensors_data_queue = None
+    commands_send_queue = None
+    commands_receive_queue = None
     
     video_stream_process = None
     raspberry_data_process = None
+    commands_process = None
+    
+    
     
     window = None
 
@@ -41,18 +48,26 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         video_frame_compute_result_queue = multiprocessing.Queue(maxsize=1000)
         map_data_queue = multiprocessing.Queue(maxsize=1000)
         sensors_data_queue = multiprocessing.Queue(maxsize=1000)
+        commands_send_queue = multiprocessing.Queue(maxsize=1000)
+        commands_receive_queue = multiprocessing.Queue(maxsize=1000)
         
         
         app = QApplication(sys.argv)
+                
+        
 
         window = MainWindow(
             # Video streaming queue
             video_frame_compute_result_queue=video_frame_compute_result_queue,
             
-            # Communication queues,
+            # Sensors data queues,
             map_data_queue=map_data_queue,
-            sensors_data_queue=sensors_data_queue
-            )
+            sensors_data_queue=sensors_data_queue,
+            
+            # Commands
+            commands_send_queue=commands_send_queue,
+            commands_receive_queue=commands_receive_queue,            
+        )
         
         # Start the video frame processing
         if "video" in features:
@@ -62,6 +77,13 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
             ) 
             # RtcTrackClientProcess(compute_result_queue=result_queue)
         
+        if "commands" in features:
+            commands_process = RaspberryCommandsAckProcess(
+                host=mqtt_host, port=mqtt_port,
+                send_queue=commands_send_queue,
+                receive_queue=commands_receive_queue
+            )
+            
         if "data" in features:
             raspberry_data_process = RaspberryDataExchangeProcess(
                 host=mqtt_host, port=mqtt_port,
@@ -74,6 +96,9 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
             
         if "data" in features:
             raspberry_data_process.start()
+            
+        if "commands" in features:
+            commands_process.start()
         
         window.show()
 
@@ -93,10 +118,15 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         sensors_data_queue.close()
         sensors_data_queue.join_thread()
         
+        commands_send_queue.close()
+        commands_receive_queue.close()
+        commands_receive_queue.join_thread()
+        commands_send_queue.join_thread()
+        
         # Stop the computing process
         if "video" in features:
             try:
-                if video_stream_process is not None:
+                if video_stream_process is not None and video_stream_process.is_alive():
                     video_stream_process.terminate()
                     logging.info('[AppUI] teminate computing process')
                     video_stream_process.join(timeout=50)
@@ -112,7 +142,7 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         
         if "data" in features:
             try:
-                if raspberry_data_process is not None:
+                if raspberry_data_process is not None and raspberry_data_process.is_alive():
                     raspberry_data_process.terminate()
                     logging.info('[AppUI] teminate raspberry data computing process')
                     raspberry_data_process.join(timeout=50)
@@ -124,7 +154,21 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
                         raspberry_data_process.kill()   
             except Exception as e:
                 logging.exception("Exception occured while stopping")
-    
+                
+        if "commands" in features:
+            try:
+                if commands_process is not None and commands_process.is_alive():
+                    commands_process.terminate()
+                    logging.info('[AppUI] teminate raspberry data computing process')
+                    commands_process.join(timeout=50)
+                    logging.info('[AppUI] joined raspberry data computing process')
+
+
+                    if commands_process.is_alive():
+                        logging.warning('[AppUI] killing computing process')
+                        commands_process.kill()   
+            except Exception as e:
+                logging.exception("Exception occured while stopping")
     
 
 if __name__ == "__main__":

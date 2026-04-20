@@ -44,9 +44,9 @@ class DataAckSyncMqtt(RThread):
                 print(type(data))
                 
                 self.queue_bridge.push_from_thread({
-                "topic": data.get("topic", "all"),
-                "payload": data.get("payload")
-            })
+                    "topic": data.get("topic", "all"),
+                    "payload": data.get("payload")
+                })
             
             time.sleep(0.001)
         

@@ -1,10 +1,22 @@
+import multiprocessing
 import sys
-from PyQt6.QtWidgets import QHBoxLayout, QPushButton, QWidget, QApplication
+from PyQt6.QtWidgets import QDialog, QHBoxLayout, QPushButton, QWidget, QApplication
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor
 
 
-class KeyboardJoystick(QWidget):
+class KeyboardJoystickDialog(QDialog):
+    def __init__(self, commands_send_queue: multiprocessing.Queue,  *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setWindowTitle("Joystick")
+        layout = QHBoxLayout()
+        
+        w = KeyboardJoystickWidget(commands_send_queue=commands_send_queue)
+        layout.addWidget(w)
+        
+        self.setLayout(layout)
+
+class KeyboardJoystickWidget(QWidget):
     # Emits raw direction string
     directionChanged = pyqtSignal(str)
     directionReleased = pyqtSignal(str)
@@ -12,8 +24,13 @@ class KeyboardJoystick(QWidget):
     # Emits joystick-like axis (x, y)
     axisChanged = pyqtSignal(float, float)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, commands_send_queue: multiprocessing.Queue,  *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Objects
+        self.commands_send_queue = commands_send_queue
+        
+        
         self.setFixedSize(220, 220)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -34,8 +51,8 @@ class KeyboardJoystick(QWidget):
         self.timer.start(100)  # every 100ms
 
         # STOP button
-        self.stop_btn = QPushButton("STOP", self)
-        self.stop_btn.setGeometry(80, 80, 60, 60)
+        self.stop_btn = QPushButton("S", self)
+        self.stop_btn.setGeometry(95, 95, 30, 30)
         self.stop_btn.clicked.connect(self.handle_stop)
 
         self.apply_style()
@@ -43,7 +60,7 @@ class KeyboardJoystick(QWidget):
     def apply_style(self):
         self.setStyleSheet("""
             QPushButton {
-                border-radius: 30px;
+                border-radius: 15px;
                 background-color: #c0392b;
                 color: white;
                 font-weight: bold;
@@ -78,6 +95,12 @@ class KeyboardJoystick(QWidget):
         self.pressed_keys.clear()
         self.directionChanged.emit("stop")
         self.axisChanged.emit(0.0, 0.0)
+        
+        self.commands_send_queue.put({
+            "topic": "slam/commands/raspberry",
+            "payload": {"x": 0, "y": 0, "a": "stop"}
+        })
+        
         print("STOP")
         self.update()
 
@@ -106,6 +129,11 @@ class KeyboardJoystick(QWidget):
         # Emit simple direction (optional)
         if x == 0 and y == 0:
             return
+        
+        self.commands_send_queue.put({
+            "topic": "slam/commands/raspberry",
+            "payload": {"x": x, "y": y, "a": "move"}
+        })
 
         direction = f"x={x:.2f}, y={y:.2f}"
         print(direction)
@@ -136,38 +164,3 @@ class KeyboardJoystick(QWidget):
         draw_circle(center_x - size//2, center_y + offset - size, "K", [Qt.Key.Key_K])
         draw_circle(center_x - offset, center_y - size//2, "J", [Qt.Key.Key_J])
         draw_circle(center_x + offset - size, center_y - size//2, "L", [Qt.Key.Key_L])
-
-
-"""
-# Demo window
-class MainWindow(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Keyboard Joystick (IJKL)")
-
-        self.joystick = KeyboardJoystick()
-        self.joystick.move(50, 50)
-
-        self.setFixedSize(300, 300)
-
-        self.joystick.directionChanged.connect(self.on_press)
-        self.joystick.directionReleased.connect(self.on_release)
-        
-        l = QHBoxLayout()
-        l.addWidget(self.joystick)
-        self.setLayout(l)
-
-    def on_press(self, direction):
-        print("Pressed:", direction)
-
-    def on_release(self, direction):
-        print("Released:", direction)
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    window.joystick.setFocus()  # IMPORTANT: enable keyboard input
-    sys.exit(app.exec())
-"""
