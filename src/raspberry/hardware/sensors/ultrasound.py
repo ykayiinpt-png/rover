@@ -3,13 +3,29 @@ import threading
 from typing import Any
 import RPi.GPIO as GPIO
 
+from collections import deque
+import statistics
+
+class UltrasoundSensorFilter:
+    def __init__(self, window_size=5):
+        self.history = deque(maxlen=window_size)
+
+    def add_and_get(self, value):
+        self.history.append(value)
+        return statistics.median(self.history)
+
+
 class UltrasoundSensor:
     """
     Object Wrapping for ultrasound sensor
     """
     
-    def __init__(self, name, trig_pin, echo_pin):
+    def __init__(self, name, key: str, trig_pin: int, echo_pin: int):
         self.name = name
+        self.key = key
+        
+        print(name, key, trig_pin, echo_pin)
+        
         self.trig_pin = trig_pin
         self.echo_pin = echo_pin
         
@@ -39,7 +55,7 @@ class UltrasoundSensor:
     def _calculate_distance(self):
         duration = self.end_time - self.start_time
         # Distance = (temps * vitesse du son) / 2
-        self.distance = (duration * 34300) / 2
+        self.distance = (duration * 343) / 2  # en m
         self.new_data_available = True
 
     def trigger(self):
@@ -68,7 +84,7 @@ class UltrasoundSensor:
 class UltrasoundSensorArray:
     def __init__(self, sensors_config: list[dict[str, Any]]):
         self.sensors = [
-            UltrasoundSensor(cfg['name'], cfg['trig'], cfg['echo']) 
+            UltrasoundSensor(cfg['name'], cfg['key'], cfg['trig'], cfg['echo']) 
             for cfg in sensors_config
         ]
         self.last_scan_data = {}
@@ -81,10 +97,10 @@ class UltrasoundSensorArray:
             sensor.trigger()
             # We wait for the trigger to finish (max 30ms for ~5m)
             time.sleep(0.03) 
-            self.last_scan_data[sensor.name] = sensor.get_distance()
+            self.last_scan_data[sensor.key] = sensor.get_distance()
             
         # TODO: to be removed
-        print(self.last_scan_data)
+        print("Ultrasound (m)", self.last_scan_data)
         
         return self.last_scan_data
     

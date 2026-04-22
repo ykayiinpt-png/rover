@@ -1,22 +1,32 @@
+import logging
 import time
 
+from src.raspberry.hardware.rover import Rover
 from src.raspberry.hardware.sensors.imu import IMUSensor
 from src.raspberry.hardware.sensors.ultrasound import UltrasoundSensorArray
+from src.raspberry.hardware.thread import UltrasoundThread
 
 class RobotController:
-    def __init__(self, sonar_array: UltrasoundSensorArray, imu: IMUSensor, odometry):
-        self.sonars = sonar_array
+    def __init__(self, rover: Rover, sonars_arr_obj: UltrasoundSensorArray, imu: IMUSensor, odometry):
+        self.sonars = sonars_arr_obj
         self.imu = imu
         self.odometry = odometry
+        self.rover = rover
         
         # Fréquences
         self.dt_kalman = 0.1  # 10 Hz (100ms)
         self.last_kalman_time = time.perf_counter()
         
+        # Threads
+        self.ultra_sound_thread = UltrasoundThread(sonars_arr=sonars_arr_obj)
+        
         self.running = True
 
     def run(self):
         print("Démarrage de la boucle principale...")
+        self.ultra_sound_thread.start()
+        logging.info("Robot Controller: Ultrasound thread started")
+        
         try:
             while self.running:
                 now = time.perf_counter()
@@ -34,7 +44,7 @@ class RobotController:
                     #self._execute_kalman_cycle(movement)
                     self.last_kalman_time = now
                     
-                    self.sonars.scan_sequence() # TODO: Will be removed
+                    #self.sonars.scan_sequence() # TODO: Will be removed
 
                 # Petite pause pour ne pas saturer le CPU à 100%
                 time.sleep(0.01) 
@@ -51,15 +61,20 @@ class RobotController:
 
         # 2. CAPTURE ULTRASONS (Perception)
         # Rappel : scan_sequence prend ~100ms car il attend les échos
-        distances = self.sonars.scan_sequence()
+        #distances = self.sonars.scan_sequence()
         
         # 3. CORRECTION & DATA ASSOCIATION
         # C'est ici qu'on mettra à jour la carte avec 'distances'
-        print(f"[Kalman] Correction : Obstacles à {distances}")
+        #print(f"[Kalman] Correction : Obstacles à {distances}")
 
     def stop(self):
         self.running = False
-        self.sonars.shutdown()
+        
+        self.ultra_sound_thread.shutdown()
+        self.ultra_sound_thread.join()
+        
+        if self.rover:
+            self.rover.stop()
         
         if self.odometry:
             self.odometry.stop()

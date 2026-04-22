@@ -1,0 +1,41 @@
+import time
+
+import RPi.GPIO as GPIO
+
+class RMotor:
+    def __init__(self, pwm_pin: int, in1_pin: int, in2_pin: int, frequency=100):
+        self.pwm_pin = pwm_pin
+        self.in1_pin = in1_pin
+        self.in2_pin = in2_pin
+        
+        # Setup des pins
+        GPIO.setup(self.pwm_pin, GPIO.OUT)
+        GPIO.setup(self.in1_pin, GPIO.OUT)
+        GPIO.setup(self.in2_pin, GPIO.OUT)
+        
+        # Initialisation du PWM
+        self.pwm = GPIO.PWM(self.pwm_pin, frequency)
+        self.pwm.start(0)
+
+    def set_speed(self, power):
+        """
+        power: valeur entre -100 et 100
+        """
+        # Handle the direction
+        # position turn forward, negative reverse
+        if power >= 0: 
+            GPIO.output(self.in1_pin, GPIO.HIGH)
+            GPIO.output(self.in2_pin, GPIO.LOW)
+            duty_cycle = power
+        else:
+            GPIO.output(self.in1_pin, GPIO.LOW)
+            GPIO.output(self.in2_pin, GPIO.HIGH)
+            duty_cycle = -power # On repasse en positif pour le PWM
+            
+        # Limitation de sécurité
+        duty_cycle = max(0, min(duty_cycle, 90))
+        print("Setting duty cylce: ", duty_cycle)
+        self.pwm.ChangeDutyCycle(duty_cycle)
+
+    def stop(self):
+        self.pwm.ChangeDutyCycle(0)
