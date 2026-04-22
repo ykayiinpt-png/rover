@@ -40,6 +40,9 @@ class UltrasoundSensor:
 
         # Interruption : to detect the rising edge and the falling edge
         GPIO.add_event_detect(self.echo_pin, GPIO.BOTH, callback=self._echo_callback)
+        
+        # Filter
+        self.filter = UltrasoundSensorFilter()
 
     def _echo_callback(self, channel):
         """Handler for echo response"""
@@ -66,7 +69,8 @@ class UltrasoundSensor:
         GPIO.output(self.trig_pin, False)
 
     def get_distance(self):
-        return round(self.distance, 2)
+        # We use the min around 3 meter to avoid noise
+        return min(round(self.filter.add_and_get(self.distance), 2), 3)
     
     def stop(self):
         """
