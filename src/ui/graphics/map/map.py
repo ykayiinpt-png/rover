@@ -11,7 +11,7 @@ class MapWidget(QWidget):
         self.setMouseTracking(True)
 
         # ---------------- MAP ----------------
-        self.map = np.random.randint(0, 255, (240, 440), dtype=np.uint8)
+        self.map = np.ones((240, 440), dtype=np.uint8) * 255
 
         # ---------------- CAMERA ----------------
         self.zoom = 1.0
@@ -20,7 +20,7 @@ class MapWidget(QWidget):
 
         # ---------------- LAYERS ----------------
         self.show_map = True
-        self.show_shapes = True
+        self.show_shapes = False
         self.show_path = True
         self.show_robot = True
 

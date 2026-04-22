@@ -30,7 +30,7 @@ class DataAckSyncMqtt(RThread):
         while not self.stop_event.is_set():
             # Check if we have data from the remote server
             if not self.queue_bridge.q_sync.empty():
-                payload = self.queue_bridge.q_async.get_nowait()
+                payload = self.queue_bridge.q_sync.get_nowait()
                 print("Data from remote server")
                 print(payload)
                 print(type(payload))

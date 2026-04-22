@@ -56,6 +56,9 @@ class RaspberryPi:
             
             # 4. Computation
             # 5. read data from remote server (command, data, etc...)
+            if not self.receive_queue.empty():
+                remote_data = self.receive_queue.get()
+                print("Remote data: ", remote_data)
             # 6. Make decision
             print("[RaspBerry Pi] Iteration done")
             time.sleep(1)
