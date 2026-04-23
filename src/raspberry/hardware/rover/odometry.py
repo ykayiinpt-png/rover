@@ -45,7 +45,7 @@ class WheelEncoder:
         print(f"Encodeur {self.name} arrêté.")
 
 
-class RobotOdometry:
+class WheelOdometry:
     def __init__(self, left_pin, right_pin, tpr, diameter):
         self.left_wheel = WheelEncoder("Gauche", left_pin, tpr, diameter)
         self.right_wheel = WheelEncoder("Droite", right_pin, tpr, diameter)
@@ -69,14 +69,3 @@ class RobotOdometry:
     def stop(self):
         self.left_wheel.stop()
         self.right_wheel.stop()
-
-class Rover:
-    """
-    Represents a physical rover with two wheels.
-    
-    It only handles commands move, right, left and back depending
-    on a state: moving, stop, drifting 
-    """
-    
-    def __init__(self):
-        pass

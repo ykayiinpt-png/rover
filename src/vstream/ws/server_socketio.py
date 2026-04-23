@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import queue
+import subprocess
 import threading
 import time
 import uuid
@@ -24,7 +25,7 @@ class SocketIoVstreamServer:
     It uses a websocket to send frame to user
     """
     
-    def __init__(self, signal_server: str, namespaces: list[str], async_event_loop: AbstractEventLoop, camera_id=0):
+    def __init__(self, signal_server: str, namespaces: list[str], async_event_loop: AbstractEventLoop, camera_id=0, os="other"):
         self.camera_id = camera_id
         
         self.started = False
@@ -36,7 +37,7 @@ class SocketIoVstreamServer:
         
         # The siganling server
         self.ws = SocketIoClient(uri=signal_server, namespaces=namespaces, async_event_loop=async_event_loop)
-        self.negotiator_thread = RtcNegotiator(camera_id)
+        self.negotiator_thread = RtcNegotiator(camera_id, os=os)
         
         self.ws_task = None
         
@@ -115,16 +116,7 @@ class SocketIoVstreamServer:
             logging.exception("[SocketIoVstreamServer] Exception occured while stopping component")
             raise e
         finally:
-            if self.video_track is not None:
-                try:
-                    self.video_track.stop()
-                except Exception as e:
-                    logging.exception("[SocketIoVstreamServer] Video track stopping exception")
-                    print(e)
-
             logging.info("[SocketIoVstreamServer] Video Queue Stoped")
-            
-            
             
             
 class RtcNegotiator(RThread):
@@ -136,9 +128,18 @@ class RtcNegotiator(RThread):
     send to server
     """
     
-    def __init__(self, camera_id=0):
+    def __init__(self, camera_id=0, os="raspberry_pi"):
+        """
+        :param os: On which operating system we are running the the server
+        """
         super().__init__()
+        
         self.camera_id = camera_id
+        self.cap = None
+        
+        self.os = os
+        self.libcamera_stream_process: subprocess.Popen = None
+        self.stream = None
         
         self.encode_param = [cv2.IMWRITE_JPEG_QUALITY, 70]
         self.target_size = (320, 240)
@@ -146,8 +147,29 @@ class RtcNegotiator(RThread):
     
     def run(self):
         try:
-            self.cap = cv2.VideoCapture(0)
-            print(f"\n\n\n\n\n {self.cap} \n\n\n\n\n\n\n\n\n")          
+            if self.os == "raspberry_pi":
+                cmd = [
+                    "libcamera-vid",
+                    "-t", "0",
+                    "--codec", "mjpeg",
+                    "--width", "320",
+                    "--height", "240",
+                    "--nopreview",
+                    "-o", "-"
+                ]
+                self.libcamera_stream_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+                self.stream = b""
+            else:
+                # We instanciate the default camera
+                self.cap = cv2.VideoCapture(0)
+                print(f"\n\n\n\n\n {self.cap} \n\n\n\n\n\n\n\n\n") 
+                
+            # The main reader loop         
             while not self.stop_event.is_set():
                 #print("In video streaming loop")
                 # We can read user redefined paramters from here
@@ -160,23 +182,41 @@ class RtcNegotiator(RThread):
                 #    pass
                 
                 
-                ret, frame = self.cap.read()
-                if not ret:
-                    logging.warning("No image frome from video source")
-                    time.sleep(2)
-                    continue
-                
-                resized = cv2.resize(frame, self.target_size, interpolation=cv2.INTER_AREA)
-                
-                success, buffer = cv2.imencode('.jpg', resized)
-                if success:
-                    frame_bytes = buffer.tobytes()
-                    self.queue_bridge.push_from_thread({
-                        "namespace": "/video",
-                        "payload": frame_bytes
-                    })
+                if self.os == "raspberry_pi":
+                    self.stream += self.libcamera_stream_process.stdout.read(1024)
+
+                    a = self.stream.find(b'\xff\xd8')  # JPEG start
+                    b = self.stream.find(b'\xff\xd9')  # JPEG end
+
+                    if a != -1 and b != -1:
+                        jpg_bytes = self.stream[a:b+2]
+                        self.stream = self.stream[b+2:]
+                        
+                        #print("Found Stream: ", jpg_bytes)
+                        
+                        self.queue_bridge.push_from_thread({
+                            "namespace": "/video",
+                            "payload": jpg_bytes
+                        })
                 else:
-                    logging.warning("Encoding frame to jpg failed")
+                    # We handle default camera on  big operating system                    
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        logging.warning("No image frome from video source")
+                        time.sleep(2)
+                        continue
+                    
+                    resized = cv2.resize(frame, self.target_size, interpolation=cv2.INTER_AREA)
+                    
+                    success, buffer = cv2.imencode('.jpg', resized)
+                    if success:
+                        frame_bytes = buffer.tobytes()
+                        self.queue_bridge.push_from_thread({
+                            "namespace": "/video",
+                            "payload": frame_bytes
+                        })
+                    else:
+                        logging.warning("Encoding frame to jpg failed")
                     
                 time.sleep(0.030) # 30 frame per second                
                         
@@ -199,6 +239,10 @@ class RtcNegotiator(RThread):
         
         if self.cap is not None:
             self.cap.release()
+            
+        if self.libcamera_stream_process:
+            self.libcamera_stream_process.kill()
+            logging.info("[RtcNegotiator] Killing Libcamera vdeo stream process")
             
         logging.debug("[RtcNegotiator] vstream server clean")
                 
