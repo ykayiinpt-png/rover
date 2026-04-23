@@ -27,15 +27,24 @@ class CommunicationProcess(multiprocessing.Process):
     """
     
     def __init__(self, host: str, port: int, 
-                send_queue: multiprocessing.Queue, receive_queue: multiprocessing.Queue,
+                ultrasound_data_sent_queue: multiprocessing.Queue,
+                imu_data_send_queue: multiprocessing.Queue,
+                odometry_data_sent_queue: multiprocessing.Queue,
+                commands_send_queue: multiprocessing.Queue,
+                commands_receive_queue: multiprocessing.Queue,
+                map_data_send_queue: multiprocessing.Queue,
                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         self.host = host
         self.port = port
         
-        self.send_queue = send_queue
-        self.receive_queue = receive_queue
+        self.ultrasound_data_sent_queue = ultrasound_data_sent_queue
+        self.imu_data_send_queue = imu_data_send_queue
+        self.odometry_data_sent_queue = odometry_data_sent_queue
+        self.commands_send_queue = commands_send_queue
+        self.commands_receive_queue = commands_receive_queue
+        self.map_data_send_queue = map_data_send_queue
         
         self.mqtt_client: MqttClient = None
     
@@ -72,8 +81,12 @@ class CommunicationProcess(multiprocessing.Process):
         
         self.component = ThreadMqttComponent(
             DataAckSyncMqtt(
-                send_queue=self.send_queue,
-                receive_queue=self.receive_queue
+                ultrasound_data_sent_queue=self.ultrasound_data_sent_queue,
+                imu_data_send_queue=self.imu_data_send_queue,
+                odometry_data_sent_queue=self.odometry_data_sent_queue,
+                commands_send_queue=self.commands_send_queue,
+                commands_receive_queue=self.commands_receive_queue,
+                map_data_send_queue=self.map_data_send_queue
             ),
             self.mqtt_client,
             ThreadCoroutineBridge(loop),

@@ -20,7 +20,7 @@ class UltrasoundThread(threading.Thread):
         self.stop_event = threading.Event()
         
         self.buffer = []
-        self.buffer_size = 10
+        self.buffer_size = 20
         
     def run(self):
         while not self.stop_event.is_set():
@@ -81,14 +81,11 @@ class IMUThread(threading.Thread):
         self.lock = threading.Lock()
         
         self.buffer = []
-        self.buffer_size = 10
+        self.buffer_size = 20
 
     def run(self):
-        last_time = time.perf_counter()
-        while not self.stop_event.is_set():
-            now = time.perf_counter()
-            dt = now - last_time
-            
+        print("Run ImuThread")
+        while not self.stop_event.is_set():       
             # Mise à jour des données brutes et calcul du Yaw
             self.sensor.update() 
             data = self.sensor.get_data()
@@ -97,31 +94,30 @@ class IMUThread(threading.Thread):
             
             if len(self.buffer) == self.buffer_size:
                 current_timestamp = datetime.now(timezone.utc).timestamp()
-                data = {
+                q_data = {
                     "topic": "slam/sensors/data/imu",
                     "payload": {
                         "time": current_timestamp,
                         "batch_dt": { "ax": 0.01, "rot": 0.01 },
                         # Ultrasound
                         "rot": [m['yaw'] for m in self.buffer],
-                        "a_x": [m['acc']['x'] for m in self.buffer],
+                        "a_x": [m['accel']['x'] for m in self.buffer],
                     }
                 }
                 
                 # Clear the buffer
                 self.buffer = []
                 
-                self.imu_data_send_queue.put(data)
+                self.imu_data_send_queue.put(q_data)
                 
                 print("\n\n\ IMU Data sent")
-                print(data)
+                print(q_data)
             
             with self.lock:
                 self.accel_x = data['accel']['x']
                 self.gyro_z = data['gyro']['z']
                 self.yaw = data['yaw']
             
-            last_time = now
             # On fait tourner l'IMU à 100Hz (très stable)
             time.sleep(0.01)
 
@@ -132,6 +128,6 @@ class IMUThread(threading.Thread):
     def shutdown(self):
         self.stop_event.set()
         logging.info("Imu Thread shutting down")
-        self.sensor.shutdown()
+        self.sensor.stop()
         logging.info("Imu shutdown OK")
         

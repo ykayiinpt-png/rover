@@ -1,6 +1,7 @@
 import logging
 
 from src.raspberry.hardware.rover import Rover
+from src.raspberry.hardware.rover.odometry import WheelOdometry
 from src.raspberry.imu_ekf_controller import ImuEkfController
 
 logging.basicConfig(
@@ -79,11 +80,19 @@ def main(host: str, port: int, features: list[str]):
         ]
     )
     
+    odometry = WheelOdometry(
+        left_pin=9, right_pin=10,
+        tpr=20, diameter=0.065 # 6.5cm
+    )
+    
     rover = Rover(
-        odo= None,
+        odo= odometry,
         pins_left={"pwm": 12 , "in1_pin": 17 , "in2_pin": 27},
         pins_right={"pwm": 13 , "in1_pin": 22 , "in2_pin": 23},
-        wheel_base_width=0.10 # 10 cm -> 0.10 m
+        pid_left={"P": 0.0, "I": 0.0, "D": 0.0},
+        pid_right={"P": 0.0, "I": 0.0, "D": 0.0},
+        wheel_base_width=0.10, # 10 cm -> 0.10 m
+        active_pid=True
     )
     
     robot_ctrl = ImuEkfController(
@@ -138,7 +147,7 @@ def main(host: str, port: int, features: list[str]):
             try:
                 if communication_process is not None and communication_process.is_alive():
                     communication_process.terminate()
-                    communication_process.join(timeout=5)
+                    communication_process.join(timeout=20)
 
 
                     if communication_process.is_alive():
@@ -182,7 +191,12 @@ if __name__ == "__main__":
     try: 
         main(host=args.mqtt_host, port=args.mqtt_port, features=args.feature)
     except Exception as e:
-        raise e
+        logging.exception("Exception in main")
+    finally:
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
 
 """
 
