@@ -44,7 +44,7 @@ class ThreadWsComponent(ActuatorComponent):
             logging.info("In ThreadWs, Ws socket connected")
         except Exception as e:
             logging.error("Can't start the websocket")
-            print(e)
+            #print(e)
         finally:
             await self.ws.close()
             
@@ -111,5 +111,5 @@ class ThreadWsComponent(ActuatorComponent):
             logging.info("Thread has stoped")
         except Exception as e:
             logging.error("Exception occured while stopping component")
-            print(e)
+            #print(e)
     

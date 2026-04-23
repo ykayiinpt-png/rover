@@ -1,3 +1,4 @@
+import logging
 import time
 import threading
 from typing import Any
@@ -24,7 +25,7 @@ class UltrasoundSensor:
         self.name = name
         self.key = key
         
-        print(name, key, trig_pin, echo_pin)
+        #print(name, key, trig_pin, echo_pin)
         
         self.trig_pin = trig_pin
         self.echo_pin = echo_pin
@@ -80,9 +81,10 @@ class UltrasoundSensor:
             GPIO.remove_event_detect(self.echo_pin)
             
             GPIO.output(self.trig_pin, False)
-            print(f"Capteur {self.name} arrêté proprement.")
+            #print(f"Capteur {self.name} arrêté proprement.")
         except Exception as e:
-            print(f"Erreur lors de l'arrêt de {self.name}: {e}")
+            logging.exception("")
+            #print(f"Erreur lors de l'arrêt de {self.name}: {e}")
     
     
 class UltrasoundSensorArray:
@@ -104,7 +106,7 @@ class UltrasoundSensorArray:
             self.last_scan_data[sensor.key] = sensor.get_distance()
             
         # TODO: to be removed
-        print("Ultrasound (m)", self.last_scan_data)
+        ##print("Ultrasound (m)", self.last_scan_data)
         
         return self.last_scan_data
     

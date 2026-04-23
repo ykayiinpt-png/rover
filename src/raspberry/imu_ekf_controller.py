@@ -53,21 +53,21 @@ class ImuEkfController:
         self.imu.calibrate(samples=100)
         
         # Lancement des threads
-        print("Démarrage de la boucle principale...")
+        #print("Démarrage de la boucle principale...")
         self.ultra_sound_thread.start()
         logging.info("Robot Controller: Ultrasound thread started")
         self.imu_thread.start()
         logging.info("Robot Controller: Imu thread has started")
         self.rover_thread.start()
         logging.info("Robot Controller: Rover Thread thread started")
-        print("Robot prêt et EKF initialisé.")
+        #print("Robot prêt et EKF initialisé.")
         
-        self.rover_thread.rover.move(0.3, 0)
+        self.rover_thread.rover.move(0.5, 0)
 
     def run(self):
-        print("[CRITICAL] Don't move the robot for a while")
+        #print("[CRITICAL] Don't move the robot for a while")
         self.start_all()
-        print("[INFO] You can move the robot")
+        #print("[INFO] You can move the robot")
         
         last_time = time.perf_counter()
 
@@ -80,7 +80,7 @@ class ImuEkfController:
                     # --- A. ACQUISITION DES DONNÉES FILTRÉES ---
                     imu_data = self.imu_thread.get_latest_data()
                     accel_x, gyro_z, yaw_imu  =  imu_data
-                    print("Gyro data", imu_data)
+                    #print("Gyro data", imu_data)
 
                     # --- B. ÉTAPE DE PRÉDICTION (EKF) ---
                     # On utilise l'IMU pour prédire le mouvement
@@ -89,7 +89,7 @@ class ImuEkfController:
                     # --- C. ÉTAPE DE CORRECTION (EKF) ---
                     # On récupère les ultrasons (Thread Sonar)
                     distances = self.ultra_sound_thread.get_last_scan_data()
-                    print(distances)
+                    #print(distances)
                     
                     # Calcul de la position observée via les murs (8x8m)
                     x_s, y_s = self.calculate_sonar_pos(distances, yaw_imu)
@@ -104,18 +104,18 @@ class ImuEkfController:
 
                     # --- E. LOGGING / CARTOGRAPHIE ---
                     x, y, theta = self.ekf.get_position()
-                    print(f"Pos: {x:.2f}, {y:.2f} | Angle: {theta:.2f}")
+                    #print(f"Pos: {x:.2f}, {y:.2f} | Angle: {theta:.2f}")
 
                     last_time = now
 
                 # Petite pause pour laisser le CPU respirer
-                time.sleep(0.001)
+                time.sleep(0.01)
 
         except KeyboardInterrupt:
             self.stop()
 
     def calculate_sonar_pos(self, dists, theta):
-        print("Distances: ", dists)
+        #print("Distances: ", dists)
         x_obs_list = []
         y_obs_list = []
 
@@ -179,4 +179,4 @@ class ImuEkfController:
         self.rover_thread.shutdown()
         self.rover_thread.join()
         
-        print("Système arrêté proprement.")
+        #print("Système arrêté proprement.")

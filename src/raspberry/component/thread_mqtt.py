@@ -41,7 +41,7 @@ class ThreadMqttComponent(ActuatorComponent):
             logging.info("[MQTT] In ThreadMqtt, Mqtt socket connected")
         except Exception as e:
             logging.error("[MQTT] Can't start the Mqtt client")
-            print(e)
+            #print(e)
         finally:
             await self.mqtt.close()
             
@@ -109,5 +109,5 @@ class ThreadMqttComponent(ActuatorComponent):
             logging.info("[MQTT] Thread has stoped")
         except Exception as e:
             logging.error("[MQTT] Exception occured while stopping component")
-            print(e)
+            #print(e)
     

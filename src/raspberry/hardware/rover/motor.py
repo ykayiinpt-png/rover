@@ -29,16 +29,16 @@ class RMotor:
         # Handle the direction
         # position turn forward, negative reverse
         if power >= 0: 
-            GPIO.output(self.in1_pin, GPIO.HIGH)
-            GPIO.output(self.in2_pin, GPIO.LOW)
-            duty_cycle = power
-        else:
             GPIO.output(self.in1_pin, GPIO.LOW)
             GPIO.output(self.in2_pin, GPIO.HIGH)
+            duty_cycle = power
+        else:
+            GPIO.output(self.in1_pin, GPIO.HIGH)
+            GPIO.output(self.in2_pin, GPIO.LOW)
             duty_cycle = -power # On repasse en positif pour le PWM
             
         # Limitation de sécurité
-        duty_cycle = max(0, min(int(duty_cycle), 99))
+        duty_cycle = max(0, min(float(duty_cycle), 99))
         print(f"Setting duty cylce: {self.pwm_pin}", duty_cycle)
         self.pwm.ChangeDutyCycle(duty_cycle)
 

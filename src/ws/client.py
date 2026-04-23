@@ -176,7 +176,7 @@ class WebSocketClient:
                     data = self.queue_bridge.q_async.get_nowait()
                     if data is not None:
                         message = data
-                        print("Data received from queue: ", message)
+                        #print("Data received from queue: ", message)
                         try:
                             start = time.perf_counter()
                             await ws.send(message) # TODO: use text=False to send binary

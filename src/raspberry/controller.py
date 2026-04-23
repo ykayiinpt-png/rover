@@ -23,7 +23,7 @@ class RobotController:
         self.running = True
 
     def run(self):
-        print("Démarrage de la boucle principale...")
+        #print("Démarrage de la boucle principale...")
         self.ultra_sound_thread.start()
         logging.info("Robot Controller: Ultrasound thread started")
         
@@ -57,7 +57,7 @@ class RobotController:
         # 1. PRÉDICTION (Basée sur l'odométrie et l'IMU)
         dist = movement['distance']
         heading = self.imu.get_data()['gyro']['z']
-        print(f"[Kalman] Prédiction : Déplacement de {dist:.2f}mm")
+        #print(f"[Kalman] Prédiction : Déplacement de {dist:.2f}mm")
 
         # 2. CAPTURE ULTRASONS (Perception)
         # Rappel : scan_sequence prend ~100ms car il attend les échos
@@ -65,7 +65,7 @@ class RobotController:
         
         # 3. CORRECTION & DATA ASSOCIATION
         # C'est ici qu'on mettra à jour la carte avec 'distances'
-        #print(f"[Kalman] Correction : Obstacles à {distances}")
+        ##print(f"[Kalman] Correction : Obstacles à {distances}")
 
     def stop(self):
         self.running = False
@@ -80,4 +80,4 @@ class RobotController:
             self.odometry.stop()
         
         self.imu.stop()
-        print("Système arrêté proprement.")
+        #print("Système arrêté proprement.")

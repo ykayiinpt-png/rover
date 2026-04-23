@@ -156,7 +156,7 @@ class MqttClient:
                     
                     if data is not None:
                         message = data
-                        print("Data received from queue: ", message)
+                        #print("Data received from queue: ", message)
                         try:
                             start = time.perf_counter()
                             await client.publish(
@@ -165,7 +165,7 @@ class MqttClient:
                                 timeout=self.send_timeout
                                 )
                             
-                            logging.info(f"Sent: {message}")
+                            #logging.info(f"Sent: {message}")
                             #print("Time: ",  time.perf_counter() - start)
                             
                             # Wait
