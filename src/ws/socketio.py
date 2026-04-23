@@ -197,8 +197,8 @@ class SocketIoClient:
                             start = time.perf_counter()
                             await self._socketIo_client.emit("message", data["payload"], namespace=data.get("namespace"))
                             
-                            logging.info(f"Sent: {message}")
-                            print("Time: ",  time.perf_counter() - start)
+                            #logging.info(f"Sent: {message}")
+                            #print("Time: ",  time.perf_counter() - start)
                             
                             # Wait
                             await asyncio.sleep(self.sleep_time_send, loop=self.async_event_loop)

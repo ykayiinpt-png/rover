@@ -180,8 +180,8 @@ class WebSocketClient:
                         try:
                             start = time.perf_counter()
                             await ws.send(message) # TODO: use text=False to send binary
-                            logging.info(f"Sent: {message}")
-                            print("Time: ",  time.perf_counter() - start)
+                            #logging.info(f"Sent: {message}")
+                            #print("Time: ",  time.perf_counter() - start)
                             
                             # Wait
                             await asyncio.sleep(self.sleep_time_send, loop=self.async_event_loop)

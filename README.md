@@ -69,7 +69,7 @@ Start the RSTP
 ffmpeg -rtsp_flags listen -i rtsp://0.0.0.0:8554/live -f null -
 
 
-# Video Strealing
+# Video Streaming
 
 On raspberry 
 ```bash

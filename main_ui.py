@@ -199,9 +199,8 @@ if __name__ == "__main__":
         "--feature",
         type=str,
         action='append',
-        nargs="+",
         choices=["video", "data", "commands"],
-        default=["video", "data", "commands"],
+        required=True,
         help="Features to activate, video processing, data excahnge and remote commands"
     )
     

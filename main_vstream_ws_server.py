@@ -76,9 +76,9 @@ class VstreamWsSocketIOServerProcess(Process):
             """
             Handle incoming message
             """
-            print("\n### Message")
+            #print("\n### Message")
             #print(data)
-            print("### Message\n")
+            #print("### Message\n")
             
             emit('response', data, broadcast=True, include_self=False, namespace="/video")
             
@@ -194,11 +194,13 @@ def main(host, port, ws_uri, features: list[str], os: str):
 
     try:
         if "server" in features:
+            print("Running Server")
             server = VstreamWsSocketIOServerProcess(host=host, port=port)
             server.start()
             logging.info("[Main] Server process scheduled to start")
         
         if "video" in features:
+            print("Running video")
             track_provider = VideoTrackProviderProcess(server_url=ws_uri, os=os)
             track_provider.start()
             logging.info("[Main] Track_provider process scheduled to start")
@@ -257,9 +259,8 @@ if __name__ == "__main__":
         "--feature",
         type=str,
         action='append',
-        nargs="+",
         choices=["video", "server"],
-        default=["video", "server"],
+        required=True,
         help="Features to activate, video processing, Video server transmitter"
     )
     
@@ -274,7 +275,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     
-    try: 
+    try:
         main(host=args.io_host, port=args.io_port, ws_uri=args.ws_uri, features=args.feature , os=args.os)
     except Exception:
         logging.exception("Exception while running")

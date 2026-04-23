@@ -166,8 +166,9 @@ class RtcNegotiator(RThread):
                 self.stream = b""
             else:
                 # We instanciate the default camera
-                self.cap = cv2.VideoCapture(0)
-                print(f"\n\n\n\n\n {self.cap} \n\n\n\n\n\n\n\n\n") 
+                self.cap = cv2.VideoCapture(self.camera_id)
+                logging.info("[RtcNegotiator] Video Capture up")
+                #print(f"\n\n\n\n\n {self.cap} \n\n\n\n\n\n\n\n\n") 
                 
             # The main reader loop         
             while not self.stop_event.is_set():

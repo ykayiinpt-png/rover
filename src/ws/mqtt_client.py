@@ -166,7 +166,7 @@ class MqttClient:
                                 )
                             
                             logging.info(f"Sent: {message}")
-                            print("Time: ",  time.perf_counter() - start)
+                            #print("Time: ",  time.perf_counter() - start)
                             
                             # Wait
                             await asyncio.sleep(self.sleep_time_send, loop=self.async_event_loop)
