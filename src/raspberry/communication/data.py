@@ -69,7 +69,7 @@ class DataAckSyncMqtt(RThread):
                         "payload": data.get("payload")
                     })
             
-            time.sleep(0.001)
+            #time.sleep(0.001)
         
         logging.info("Thread stop event up")
         

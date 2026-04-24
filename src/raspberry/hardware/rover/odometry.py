@@ -6,9 +6,12 @@ class WheelEncoder:
     Encoder used to measure the real velocity of wheel
     """
     
-    def __init__(self, name, pin, ticks_per_rev, wheel_diameter, velocity_smoothing_alpha=0.8):
+    def __init__(self, name, pin, ticks_per_rev, wheel_diameter, velocity_smoothing_alpha=0.99):
         self.name = name
         self.pin = pin
+        """
+        Tick per revolution
+        """
         self.ticks_per_rev = ticks_per_rev
         self.per_tick = (wheel_diameter * 3.14159) / ticks_per_rev
         
@@ -16,7 +19,7 @@ class WheelEncoder:
         self.last_delta_ticks = 0
         self.last_time = time.perf_counter()
         self.velocity_filtered = 0 # Will be ued to smooth the velocity and avoid spikes
-        self.velocity_smoothing_alpha = velocity_smoothing_alpha
+        self.velocity_smoothing_alpha = 0.8 #velocity_smoothing_alpha
         # Set up GPIO
         GPIO.setup(self.pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         
@@ -28,13 +31,24 @@ class WheelEncoder:
         Handler to increment the tick
         """
         self.total_ticks += 1
+        
+    def reset(self):
+        """
+        Reset Chieck counter. Called specially if 
+        velocity is set to 0
+        """
+        
+        self.total_ticks = 0
+        self.last_delta_ticks = 0
 
-    def get_delta_and_reset(self):
+    def get_delta_and_reset_old(self):
         """
         Returns the accumulated ticks since the last call. We found
         also the velocity and the distance
         
         Will be used by filters for position estimation
+        
+        @deprecated
         """
         now = time.perf_counter()
         dt = now - self.last_time
@@ -60,7 +74,42 @@ class WheelEncoder:
         
         self.last_time = now
     
-        return delta, distance, self.velocity_filtered
+        return delta, distance, raw_velocity #self.velocity_filtered
+    
+    def get_delta_and_reset(self):
+        """
+        Returns the accumulated ticks since the last call. We found
+        also the velocity and the distance
+        
+        Will be used by filters for position estimation
+        """
+        now = time.perf_counter()
+        dt = now - self.last_time
+        
+        current_ticks = self.total_ticks
+        delta = current_ticks - self.last_delta_ticks
+        if abs(delta) < 2:
+            delta = 0
+        
+        self.last_delta_ticks = current_ticks
+        print(f"{self.name} Delta: ", delta, self.total_ticks)
+        if dt > 0:
+            revolutions  = delta / self.ticks_per_rev
+            # Convert to RPM
+            raw_velocity = (revolutions / dt) * 60
+        else:
+            raw_velocity = 0
+        
+        
+        self.velocity_filtered = (
+            self.velocity_smoothing_alpha * self.velocity_filtered +
+            (1 - self.velocity_smoothing_alpha) * raw_velocity
+        )
+        
+        self.last_time = now
+    
+        return delta, 0, self.velocity_filtered
+
 
     def stop(self):
         GPIO.remove_event_detect(self.pin)

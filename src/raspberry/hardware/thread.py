@@ -114,7 +114,7 @@ class IMUThread(threading.Thread):
                 #print(q_data)
             
             with self.lock:
-                self.accel_x = data['accel']['x']
+                self.accel_x = data['accel']['y']
                 self.gyro_z = data['gyro']['z']
                 self.yaw = data['yaw']
             

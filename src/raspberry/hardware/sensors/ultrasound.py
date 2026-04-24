@@ -81,7 +81,7 @@ class UltrasoundSensor:
             GPIO.remove_event_detect(self.echo_pin)
             
             GPIO.output(self.trig_pin, False)
-            #print(f"Capteur {self.name} arrêté proprement.")
+            print(f"Capteur {self.name} arrêté proprement.")
         except Exception as e:
             logging.exception("")
             #print(f"Erreur lors de l'arrêt de {self.name}: {e}")

@@ -56,6 +56,7 @@ class Rover:
         self.pid_last_compute_time = None
         self.last_command = None
         self._stopped = False
+        self.update_cycle_counter = 0
         
         # The command locker, no command has been locked
         self.target_v_lock =  {
@@ -138,8 +139,9 @@ class Rover:
         if self.last_command is None:
             return
         
-        self.target_v_l = 0.01 * sign(self.target_v_l)
-        self.target_v_r = 0.01 * sign(self.target_v_r)
+        # For the moment no need to reset the velocity
+        #self.target_v_l = 0.01 * sign(self.target_v_l)
+        #self.target_v_r = 0.01 * sign(self.target_v_r)
         
         
         
@@ -148,10 +150,13 @@ class Rover:
         self.pid_l.interrupt()
         self.pid_r.interrupt()
         
+        self.odo.left_wheel.reset()
+        self.odo.right_wheel.reset()
+        
         # We block any further change for a number of cycle
         self.target_v_lock =  {
             # Was the rover stopped before ? if yet use a smal cyle number
-            "n_cycles": 1 if self._stopped else 10,
+            "n_cycles": 1 if self._stopped else 2,
             "active": True,
             "command": cmd
         }
@@ -192,7 +197,7 @@ class Rover:
             self.pid_l.interrupt()
             self.pid_r.interrupt()
             
-            #self.move_break()
+            self.move_break()
             print("Stopped")
             
         
@@ -208,7 +213,7 @@ class Rover:
         """
         if dt <= 0.01:
             # We won't handle small time difference
-            return 
+            pass #return 
         
         if self.last_command is None:
             print("No Command Yet received")
@@ -221,8 +226,8 @@ class Rover:
         print("Dist_l", dist_l)
         print("Dist_r", dist_r)
         
-        self.command_v_l = dist_l / dt
-        self.command_v_r = dist_r / dt
+        self.command_v_l = movement["left"]["v"] #dist_l / dt
+        self.command_v_r = movement["right"]["v"] #dist_r / dt
         
         # TODO: Check if command remains zero for at least 1s, if so reset the pid
         # TODO Check if the diff between the both velocity is similar duringt N Cycle
@@ -242,13 +247,23 @@ class Rover:
         print(f"Targets: l={self.target_v_l} r={self.target_v_r}")
         print(f"Command: l={self.command_v_l} r={self.command_v_r}")
         
+        self.update_cycle_counter += 1
+        if self.update_cycle_counter * dt >= 10:
+            # We expect the velocity to be stable at this time
+            # We reset the pid to nullify the integral
+            # before the next compute
+            #self.pid_l.interrupt()
+            #self.pid_r.interrupt()
+            
+            self.update_cycle_counter = 0
+        
         # Have to pass the absolute value of the target sign
         # since we can have negative value for velocity
         # and pid are optimized only for posiitive
         # The pwm will translate.
         # That why we have impose a tampred period to slow down to zero
         self.pwm_l = self.pid_l.compute(abs(self.target_v_l), self.command_v_l)
-        self.pwm_r = self.pid_r.compute(abs(self.target_v_r), self.command_v_r)
+        self.pwm_r = self.pid_r.compute(abs(self.target_v_r * 1.0), self.command_v_r)
         
         # 3. Compute the difference in velocity
         dv = self.command_v_l - self.command_v_r
@@ -259,8 +274,10 @@ class Rover:
         self.pwm_r += self.pwm_bais_r + Kpwm
         
         
-        self.motor_l.set_speed(self.pwm_l * sign(self.target_v_l))
-        self.motor_r.set_speed(self.pwm_r * sign(self.target_v_r))
+        #self.motor_l.set_speed(self.pwm_l * sign(self.target_v_l))
+        #self.motor_r.set_speed(self.pwm_r * sign(self.target_v_r))
+        self.motor_l.set_speed(self.pwm_l)
+        self.motor_r.set_speed(self.pwm_r)
         
         # In case we have a target velock lock, we decrement and check if 
         # the required number of cycle has passed in order to execute
@@ -302,7 +319,7 @@ class RoverThread(threading.Thread):
         self.buffer = []
         self.buffer_size = 5
         
-        self.loop_dt = 0.1 # 0.8 second
+        self.loop_dt = 0.01 # 0.8 second
         
     def handle_batch(self):
         """
@@ -315,7 +332,13 @@ class RoverThread(threading.Thread):
             "wr_t": self.rover.target_v_r,
             "wr_c": self.rover.command_v_r * sign(self.rover.target_v_r),
             "wl_p": abs(self.rover.pwm_l),
-            "wr_p": abs(self.rover.pwm_r)
+            "wr_p": abs(self.rover.pwm_r),
+            "wr_pid_e": self.rover.pid_r.prev_error,
+            "wr_pid_i": self.rover.pid_r.integral,
+            "wr_pid_d": self.rover.pid_r.prev_derivative,
+            "wl_pid_e": self.rover.pid_l.prev_error,
+            "wl_pid_i": self.rover.pid_l.integral,
+            "wl_pid_d": self.rover.pid_l.prev_derivative,
         }
         
         self.buffer.append(data)
@@ -325,7 +348,7 @@ class RoverThread(threading.Thread):
                 "topic": "slam/rover/data/odometry",
                 "payload": {
                     "time": current_timestamp,
-                    "batch_dt": { "ax": self.loop_dt},
+                    "batch_dt": { "ax": 1},
                     # Ultrasound
                     "wl_t": [m['wl_t'] for m in self.buffer],
                     "wl_c": [m['wl_c'] for m in self.buffer],
@@ -333,6 +356,12 @@ class RoverThread(threading.Thread):
                     "wr_c": [m['wr_c'] for m in self.buffer],
                     "wl_p": [m['wl_p'] for m in self.buffer],
                     "wr_p": [m['wr_p'] for m in self.buffer],
+                    "wr_pid_e": [m['wr_pid_e'] for m in self.buffer],
+                    "wr_pid_i": [m['wr_pid_i'] for m in self.buffer],
+                    "wr_pid_d": [m['wr_pid_d'] for m in self.buffer],
+                    "wl_pid_e": [m['wl_pid_e'] for m in self.buffer],
+                    "wl_pid_i": [m['wl_pid_i'] for m in self.buffer],
+                    "wl_pid_d": [m['wl_pid_d'] for m in self.buffer],
                 }
             }
             
@@ -346,22 +375,31 @@ class RoverThread(threading.Thread):
         
         dt = 0
         dt_pid_end = None
+        last_handle_batch_time = time.perf_counter()
+        cycle_count = 0
         
         while not self.stop_event.is_set():
+            
+            now = time.perf_counter()
             self.rover.check_command()
             
             if dt_pid_end is not None:
-                dt = time.perf_counter() - dt_pid_end
+                dt = now - dt_pid_end
                 print("PID waiting dt: ", dt)
 
             self.rover.update(dt)
             dt_pid_end = time.perf_counter()
-                
             
-            self.handle_batch()
+            if cycle_count >= 10:
+                pass
+                
+            if now - last_handle_batch_time > 0.1:
+                self.handle_batch()
+                last_handle_batch_time = now
             
             # Wait for the speed modification to have effect
             time.sleep(self.loop_dt)
+            cycle_count += 1
         
         logging.info("[RoverThread] Loop finished")
         

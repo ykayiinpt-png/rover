@@ -11,3 +11,8 @@ def dict_equal_fast(d1, d2):
             return False
     
     return True
+
+def clamp(x, min, max):
+    if x < min: return min
+    if x > max: return max
+    return x
