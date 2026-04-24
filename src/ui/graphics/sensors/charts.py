@@ -56,12 +56,13 @@ class UltraSoundsCharts(QWidget):
             self.plot_graphs[k].setLabel("left", "cm", **styles)
             self.plot_graphs[k].setLabel("bottom", "time (ms)", **styles)
             self.plot_graphs[k].showGrid(x=True, y=True)
-            self.plot_graphs[k].setYRange(0, 150)
+            self.plot_graphs[k].setTitle(f"<span style='font-size: 9px'>Ultrasound - {k.upper()}</span>")
+            #self.plot_graphs[k].setYRange(0, 150)
             self.plot_graphs[k].setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
             
         
         time_now = datetime.now(timezone.utc).timestamp()
-        self.graph_window_size = 20
+        self.graph_window_size = 200
         self.time = np.array([time_now - i for i in range(self.graph_window_size)])
         self.distances = {
             "f": np.zeros(self.graph_window_size),
@@ -126,10 +127,17 @@ class UltraSoundsCharts(QWidget):
         with self.draw_lock:
             # Update the time array
             if len(dict_arr["f"]) >= self.graph_window_size:
-                self.time = [ dict_arr["time"] + i * dict_arr["batch_dt"]["u"] for i in range(self.graph_window_size)]
+                #self.time = [ dict_arr["time"] + i * dict_arr["batch_dt"]["u"] for i in range(self.graph_window_size)]
+                
+                self.time = [ datetime.now(timezone.utc).timestamp() - i * dict_arr["batch_dt"]["u"] for i in range(self.graph_window_size)]
+                self.time = reversed(self.time)
             else:
-                self.time = np.roll(self.time, -1)
-                self.time[-1] = dict_arr["time"]
+                l = len(dict_arr["f"])
+                #self.time = np.roll(self.time, len(dict_arr["f"]))
+                #self.time[-1] = self.time[-1] + dict_arr["batch_dt"]["u"]
+                
+                self.time[:-l] = self.time[l:]
+                self.time[-l:] = self.time[-l-1] + np.arange(1, l+1) * dict_arr["batch_dt"]["u"]
             
             # Update sensors data plot
             for k in ["f", "b", "l", "r"]:
@@ -182,8 +190,12 @@ class SensorsChartsContorller(QThread):
                 
                 if type(data) is dict:
                     for k in data.keys():
-                        if (k in ["f", "b", "l", "r"]) and (type(data[k]) is not list):
-                            data[k] = [data[k]]
+                        if k in ["f", "b", "l", "r"]:
+                            if type(data[k]) is not list:
+                                data[k] = [data[k]]
+                                
+                            # Convert from metter to centimer
+                            data[k] = list(map(lambda x: x*100, data[k]))
                 
                 self.signals.ultra_sounds_data.emit(data)
             else:

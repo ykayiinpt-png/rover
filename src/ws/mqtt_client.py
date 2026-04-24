@@ -122,7 +122,7 @@ class MqttClient:
                     data = ast.literal_eval(msg.payload.decode('utf-8'))
                     
                     # TODO: send back to thread
-                    await self.queue_bridge.push_from_coroutin(data)
+                    await self.queue_bridge.push_from_coroutin({"topic": str(msg.topic), "data": data})
                     print("Data sent to queue")
                     
                     await asyncio.sleep(0.001)

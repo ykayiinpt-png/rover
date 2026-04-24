@@ -17,39 +17,42 @@ class RaspberryDataAckMqtt(RThread):
     computation.
     """
     
-    def __init__(self, map_data_queue: multiprocessing.Queue, sensors_data_queue: multiprocessing.Queue):
+    def __init__(self,
+                map_data_queue: multiprocessing.Queue,
+                sensors_imu_data_queue: multiprocessing.Queue,
+                sensors_ultrasound_data_queue: multiprocessing.Queue):
         super().__init__()
         
         self.map_result_data_queue = map_data_queue
-        self.sensors_result_data_queue = sensors_data_queue
+        self.sensors_ultrasound_data_queue = sensors_ultrasound_data_queue
+        self.sensors_imu_data_queue = sensors_imu_data_queue
         
     def run(self):
         while not self.stop_event.is_set():
             # Check if we have data from the remote server
             if not self.queue_bridge.q_sync.empty():
-                payload = self.queue_bridge.q_sync.get_nowait()
+                payload: dict = self.queue_bridge.q_sync.get_nowait()
                 print("Data from remote server")
                 print(payload)
                 print(type(payload))
                 
-                # For sensors, we receive somthing like this
-                # for ultrasounds
-                #{'u_f': 3.2060321054356744, 'u_b': 22.689679053200752, 'u_l': 68.26021586457152, 'u_r': 4.3811363690471}
-                
-                
-                data = {}
-                
-                if type(payload) is dict:
-                    for k, v in payload.items():
-                        if k in ["u_f", "u_b", "u_l", "u_r"]:
-                            data[k.replace("u_", "")] = v
-                    
-                    data["time"] = payload["time"]
-                    data["batch_dt"] = payload["batch_dt"]
-                
-                
-                
-                self.sensors_result_data_queue.put(data)
+                if payload.get("topic") is not None and payload.get("data") is not None:
+                    if payload.get("topic") == "slam/sensors/data/ultrasound":
+                        # For sensors, we receive somthing like this
+                        # for ultrasounds
+                        #{'u_f': 3.2060321054356744, 'u_b': 22.689679053200752, 'u_l': 68.26021586457152, 'u_r': 4.3811363690471}
+                        data = {}
+                        _payload = payload.get("data")
+                        
+                        if type(_payload) is dict:
+                            for k, v in _payload.items():
+                                if k in ["u_f", "u_b", "u_l", "u_r"]:
+                                    data[k.replace("u_", "")] = v
+                            
+                            data["time"] = _payload["time"]
+                            data["batch_dt"] = _payload["batch_dt"]
+        
+                            self.sensors_ultrasound_data_queue.put(data)
                 
                 # TODO: push to map queue also
             else:
@@ -72,7 +75,9 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
     """
     
     def __init__(self, host: str, port: int, 
-                 map_data_queue: multiprocessing.Queue, sensors_data_queue: multiprocessing.Queue,
+                 map_data_queue: multiprocessing.Queue,
+                sensors_imu_data_queue: multiprocessing.Queue,
+                sensors_ultrasound_data_queue: multiprocessing.Queue,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -86,7 +91,8 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
         self.data_queue = multiprocessing.Queue(maxsize=1000)
         
         self.map_result_data_queue = map_data_queue
-        self.sensors_result_data_queue = sensors_data_queue
+        self.sensors_ultrasound_data_queue = sensors_ultrasound_data_queue
+        self.sensors_imu_data_queue = sensors_imu_data_queue
         
     def run(self):
         try:
@@ -109,14 +115,22 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
         self.mqtt_client = MqttClient(
             uri=self.host, port=self.port,
             # Only topics for data reception
-            topics=["slam/sensors/data"],
+            topics=[
+                "slam/sensors/data/ultrasound",
+                "slam/sensors/data/imu",
+                
+                
+                # Others
+                "slam/rover/data/velocity",
+            ],
             async_event_loop=loop
         )
         
         self.component = ThreadMqttComponent(
             RaspberryDataAckMqtt(
                 map_data_queue=self.map_result_data_queue,
-                sensors_data_queue=self.sensors_result_data_queue
+                sensors_ultrasound_data_queue=self.sensors_ultrasound_data_queue,
+                sensors_imu_data_queue=self.sensors_imu_data_queue
             ),
             self.mqtt_client,
             ThreadCoroutineBridge(loop),

@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPush
 from src.ui.detection import DetectionWidget
 from src.ui.graphics.map.map_navigation import MapNavigationDialog, MapNavigationWidget
 from src.ui.graphics.controls.joystick import KeyboardJoystickDialog
+from src.ui.graphics.rover_state.velocity import RobotVelocityStateWidget
 from src.ui.log import LogWidget
 from src.ui.graphics.map.map import MapWidget
 from src.ui.graphics.sensors.charts import SensorCharts
@@ -19,7 +20,9 @@ from src.ui.video.widgets import RtcTrackWidget
 class MainWindow(QMainWindow):
     def __init__(self,
                 video_frame_compute_result_queue: multiprocessing.Queue,
-                sensors_data_queue: multiprocessing.Queue, map_data_queue: multiprocessing.Queue,
+                sensors_ultrasound_data_queue: multiprocessing.Queue,
+                sensors_imu_data_queue: multiprocessing.Queue,
+                map_data_queue: multiprocessing.Queue,
                 commands_send_queue: multiprocessing.Queue, commands_receive_queue: multiprocessing.Queue):
         super().__init__()
         
@@ -27,6 +30,8 @@ class MainWindow(QMainWindow):
         self.keyboard_joystick_dialog = KeyboardJoystickDialog(
             commands_send_queue=commands_send_queue
         )
+        
+        self.rover_state_velocity = RobotVelocityStateWidget()
         
         self.setWindowTitle("Rover SLAM")
         
@@ -36,7 +41,7 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout()
         
         # Components
-        self.sensors_chart = SensorCharts(data_queue=sensors_data_queue)
+        self.sensors_chart = SensorCharts(data_queue=sensors_ultrasound_data_queue)
         layout.addWidget(self.sensors_chart)
         
         self.rtc_track_widget = RtcTrackWidget(parent=self, compute_queue=video_frame_compute_result_queue)
@@ -85,8 +90,13 @@ class MainWindow(QMainWindow):
         data_acq_menu = menu.addMenu("Acquisition")
         data_acq_menu_sensors_menus = data_acq_menu.addMenu("Sensors")
         data_acq_menu_sensors_menus_parameter_action = QAction("Parameters", self)
-        data_acq_menu_sensors_menus_parameter_action.triggered.connect(self.slot_menu_acq_parameter)
+        data_acq_menu_sensors_menus_parameter_action.triggered.connect(self.slot_menu_acq_sensors_parameter)
         data_acq_menu_sensors_menus.addAction(data_acq_menu_sensors_menus_parameter_action)
+        
+        data_acq_menu_rovstate_menus = data_acq_menu.addMenu("Rover State")
+        data_acq_menu_rovstate_menus_velocity_action = QAction("Velocity", self)
+        data_acq_menu_rovstate_menus_velocity_action.triggered.connect(self.slot_menu_acq_rstate_velocity)
+        data_acq_menu_rovstate_menus.addAction(data_acq_menu_rovstate_menus_velocity_action)
         
         data_acq_menu_video_m = data_acq_menu.addMenu("Video")
         data_acq_menu_video_m_start_track_action = QAction("Start Track", self)
@@ -136,7 +146,7 @@ class MainWindow(QMainWindow):
         
         event.accept()
         
-    def slot_menu_acq_parameter(self):
+    def slot_menu_acq_sensors_parameter(self):
         self.dialog = AccquisitionMenuSensorsParameters()
         if self.dialog.exec():
             data = self.dialog.get_selected_options()
@@ -177,5 +187,9 @@ class MainWindow(QMainWindow):
     def slop_map_menu_open_joystick(self):
         if self.keyboard_joystick_dialog is not None:
             self.keyboard_joystick_dialog.show()
+            
+    def slot_menu_acq_rstate_velocity(self):
+        if not self.rover_state_velocity.isVisible():
+            self.rover_state_velocity.show()
         
         

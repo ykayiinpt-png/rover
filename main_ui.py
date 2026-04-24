@@ -31,7 +31,8 @@ logging.basicConfig(
 def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
     video_frame_compute_result_queue = None
     map_data_queue = None
-    sensors_data_queue = None
+    sensors_ultrasound_data_queue = None
+    sensors_imu_data_queue = None
     commands_send_queue = None
     commands_receive_queue = None
     
@@ -47,7 +48,7 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         # Queus
         video_frame_compute_result_queue = multiprocessing.Queue(maxsize=1000)
         map_data_queue = multiprocessing.Queue(maxsize=1000)
-        sensors_data_queue = multiprocessing.Queue(maxsize=1000)
+        sensors_ultrasound_data_queue = multiprocessing.Queue(maxsize=1000)
         commands_send_queue = multiprocessing.Queue(maxsize=1000)
         commands_receive_queue = multiprocessing.Queue(maxsize=1000)
         
@@ -62,7 +63,8 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
             
             # Sensors data queues,
             map_data_queue=map_data_queue,
-            sensors_data_queue=sensors_data_queue,
+            sensors_ultrasound_data_queue=sensors_ultrasound_data_queue,
+            sensors_imu_data_queue=None,
             
             # Commands
             commands_send_queue=commands_send_queue,
@@ -88,7 +90,8 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
             raspberry_data_process = RaspberryDataExchangeProcess(
                 host=mqtt_host, port=mqtt_port,
                 map_data_queue=map_data_queue,
-                sensors_data_queue=sensors_data_queue
+                sensors_ultrasound_data_queue=sensors_ultrasound_data_queue,
+                sensors_imu_data_queue=sensors_imu_data_queue
             )
         
         if "video" in features:
@@ -115,8 +118,8 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         
         map_data_queue.close()
         map_data_queue.join_thread()
-        sensors_data_queue.close()
-        sensors_data_queue.join_thread()
+        sensors_ultrasound_data_queue.close()
+        sensors_ultrasound_data_queue.join_thread()
         
         commands_send_queue.close()
         commands_receive_queue.close()
