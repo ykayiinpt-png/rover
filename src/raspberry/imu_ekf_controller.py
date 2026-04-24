@@ -1,4 +1,5 @@
 import logging
+import multiprocessing
 import time
 import numpy as np
 
@@ -9,7 +10,8 @@ from src.raspberry.hardware.sensors.ultrasound import UltrasoundSensorArray
 from src.raspberry.hardware.thread import UltrasoundThread
 
 class ImuEkfController:
-    def __init__(self, rover: Rover, sonars_arr_obj: UltrasoundSensorArray, imu: IMUSensor):
+    def __init__(self, rover: Rover, sonars_arr_obj: UltrasoundSensorArray, imu: IMUSensor,
+                ultrasound_send_queue: multiprocessing.Queue):
         self.sonars = sonars_arr_obj
         self.imu = imu
         
@@ -24,7 +26,10 @@ class ImuEkfController:
         self.square_size = 8.0
         
         # Threads
-        self.ultra_sound_thread = UltrasoundThread(sonars_arr=sonars_arr_obj)
+        self.ultra_sound_thread = UltrasoundThread(
+            sonars_arr=sonars_arr_obj,
+            send_queue=ultrasound_send_queue
+        )
         self.rover_thread = RoverThread(rover=rover)
         
         self.running = True
@@ -41,7 +46,7 @@ class ImuEkfController:
         logging.info("Robot Controller: Rover Thread thread started")
         print("Robot prêt et EKF initialisé.")
         
-        self.rover_thread.rover.move(0, -14)
+        #self.rover_thread.rover.move(0, -14)
 
     def run(self):
         print("[CRITICAL] Don't move the robot for a while")

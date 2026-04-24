@@ -92,7 +92,7 @@ class CommunicationProcess(multiprocessing.Process):
             pass
         finally:
             logging.info("[CommunicationProcess] Closing async process")
-            await self.__stop()
+            await self.stop()
         
             logging.info("[CommunicationProcess] Finally closed")
             
