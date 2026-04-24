@@ -55,6 +55,9 @@ from src.raspberry.pi import RaspberryPi
 def main():
     cfg = Config()
     
+    processing_manager = multiprocessing.Manager()
+    rover_shared_state = processing_manager.dict()
+    
     map_data_send_queue = multiprocessing.Queue(maxsize=1000)
     ultrasound_data_sent_queue = multiprocessing.Queue(maxsize=1000)
     imu_data_send_queue=multiprocessing.Queue(maxsize=1000)
@@ -69,6 +72,7 @@ def main():
     if "data" in features:
         communication_process = CommunicationProcess(
             host=cfg.mqtt.host, port=cfg.mqtt.port,
+            rover_shared_state=rover_shared_state,
             ultrasound_data_sent_queue=ultrasound_data_sent_queue,
             imu_data_send_queue=imu_data_send_queue,
             odometry_data_sent_queue=odometry_data_sent_queue,
@@ -92,6 +96,8 @@ def main():
     )
     
     rover = Rover(
+        velocity=cfg.rover.velocity,
+        shared_state=rover_shared_state,
         odo= odometry,
         pins_right={
             "pwm": cfg.rover.motor.gpio.right.pwm ,

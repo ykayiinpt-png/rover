@@ -2,6 +2,8 @@ import time
 
 import RPi.GPIO as GPIO
 
+from src.core.utils import sign
+
 class RMotor:
     def __init__(self, pwm_pin: int, in1_pin: int, in2_pin: int, frequency=100):
         self.pwm_pin = pwm_pin
@@ -17,6 +19,8 @@ class RMotor:
         self.pwm = GPIO.PWM(self.pwm_pin, frequency)
         self.pwm.start(0)
         
+        self._dir = 0
+        
 
     def set_speed(self, power):
         """
@@ -24,17 +28,23 @@ class RMotor:
         """
         
         #self.pwm.ChangeDutyCycle(40)
-        print(f"Motor {self.pwm_pin} has changed duty cyle")
+        print(f"Motor {self.pwm_pin} has changed duty cyle to: {power}")
+        
+        if self._dir != sign(power):
+            self.pwm.ChangeDutyCycle(0)
+            self._dir = sign(power)
+
         #return
         # Handle the direction
         # position turn forward, negative reverse
         if power >= 0: 
-            GPIO.output(self.in1_pin, GPIO.LOW)
-            GPIO.output(self.in2_pin, GPIO.HIGH)
+            GPIO.output(self.in1_pin, False)
+            GPIO.output(self.in2_pin, True)
             duty_cycle = power
         else:
-            GPIO.output(self.in1_pin, GPIO.HIGH)
-            GPIO.output(self.in2_pin, GPIO.LOW)
+            # NOTE: Need the two motor to be running
+            GPIO.output(self.in1_pin, True)
+            GPIO.output(self.in2_pin, False)
             duty_cycle = -power # On repasse en positif pour le PWM
             
         # Limitation de sécurité

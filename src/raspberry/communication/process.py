@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import multiprocessing
+from multiprocessing.managers import DictProxy
 import signal
 
 
@@ -26,7 +27,8 @@ class CommunicationProcess(multiprocessing.Process):
     data from brokers
     """
     
-    def __init__(self, host: str, port: int, 
+    def __init__(self, host: str, port: int,
+                rover_shared_state: DictProxy,
                 ultrasound_data_sent_queue: multiprocessing.Queue,
                 imu_data_send_queue: multiprocessing.Queue,
                 odometry_data_sent_queue: multiprocessing.Queue,
@@ -45,6 +47,8 @@ class CommunicationProcess(multiprocessing.Process):
         self.commands_send_queue = commands_send_queue
         self.commands_receive_queue = commands_receive_queue
         self.map_data_send_queue = map_data_send_queue
+        
+        self.rover_shared_state = rover_shared_state
         
         self.mqtt_client: MqttClient = None
     
@@ -75,12 +79,16 @@ class CommunicationProcess(multiprocessing.Process):
         self.mqtt_client = MqttClient(
             uri=self.host, port=self.port,
             # Only topics for data reception
-            topics=["slam/commands/remote"],
+            topics=[
+                # Commands to move from the remote
+                "slam/rover/commands/remote"
+            ],
             async_event_loop=loop
         )
         
         self.component = ThreadMqttComponent(
             DataAckSyncMqtt(
+                rover_shared_state=self.rover_shared_state,
                 ultrasound_data_sent_queue=self.ultrasound_data_sent_queue,
                 imu_data_send_queue=self.imu_data_send_queue,
                 odometry_data_sent_queue=self.odometry_data_sent_queue,

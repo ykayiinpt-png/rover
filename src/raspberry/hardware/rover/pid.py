@@ -8,6 +8,10 @@ class PIDController:
         self.integral = 0
         self.last_time = time.perf_counter()
         self.name = name
+        
+    def interrupt(self):
+        self.integral = 0
+        self.prev_error = 0
 
     def compute(self, target_speed, current_speed):
         now = time.perf_counter()
