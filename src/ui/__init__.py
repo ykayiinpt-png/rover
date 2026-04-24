@@ -22,16 +22,22 @@ class MainWindow(QMainWindow):
                 video_frame_compute_result_queue: multiprocessing.Queue,
                 sensors_ultrasound_data_queue: multiprocessing.Queue,
                 sensors_imu_data_queue: multiprocessing.Queue,
+                odometry_data_queue: multiprocessing.Queue,
                 map_data_queue: multiprocessing.Queue,
-                commands_send_queue: multiprocessing.Queue, commands_receive_queue: multiprocessing.Queue):
+                command_sent_data_queue: multiprocessing.Queue,
+                command_receive_data_queue: multiprocessing.Queue):
         super().__init__()
         
         # Objects
         self.keyboard_joystick_dialog = KeyboardJoystickDialog(
-            commands_send_queue=commands_send_queue
+            commands_send_queue=command_sent_data_queue,
+            command_receive_queue=command_receive_data_queue
         )
         
-        self.rover_state_velocity = RobotVelocityStateWidget()
+        self.rover_state_velocity = RobotVelocityStateWidget(
+            imu_data_queue=sensors_imu_data_queue,
+            odometry_data_queue=odometry_data_queue
+        )
         
         self.setWindowTitle("Rover SLAM")
         
@@ -143,6 +149,7 @@ class MainWindow(QMainWindow):
         logging.info("Closing Application UI")
         self.rtc_track_widget.stop()
         self.sensors_chart.stop()
+        self.rover_state_velocity.stop()
         
         event.accept()
         

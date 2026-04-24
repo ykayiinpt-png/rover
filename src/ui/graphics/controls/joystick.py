@@ -6,17 +6,20 @@ from PyQt6.QtGui import QPainter, QColor
 
 
 class KeyboardJoystickDialog(QDialog):
-    def __init__(self, commands_send_queue: multiprocessing.Queue,  *args, **kwargs):
+    def __init__(self, 
+                commands_send_queue: multiprocessing.Queue,
+                command_receive_queue: multiprocessing.Queue,
+                *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setWindowTitle("Joystick")
         layout = QHBoxLayout()
         
-        w = KeyboardJoystickWidget(commands_send_queue=commands_send_queue)
+        w = KeyboardJoystickWidget(commands_send_queue=commands_send_queue, command_receive_queue=command_receive_queue)
         layout.addWidget(w)
         
         self.setLayout(layout)
 
-class KeyboardJoystickWidget(QWidget):
+class KeyboardJoystickWidget(QWidget): 
     # Emits raw direction string
     directionChanged = pyqtSignal(str)
     directionReleased = pyqtSignal(str)
@@ -24,7 +27,9 @@ class KeyboardJoystickWidget(QWidget):
     # Emits joystick-like axis (x, y)
     axisChanged = pyqtSignal(float, float)
 
-    def __init__(self, commands_send_queue: multiprocessing.Queue,  *args, **kwargs):
+    def __init__(self, 
+                commands_send_queue: multiprocessing.Queue,
+                command_receive_queue: multiprocessing.Queue,  *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         # Objects

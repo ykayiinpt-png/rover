@@ -1,12 +1,21 @@
+from datetime import datetime, timezone
+import logging
+import multiprocessing
 import sys
+import threading
+import time
 import numpy as np
 from collections import deque
 from PyQt6.QtWidgets import QApplication, QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 import pyqtgraph as pg
 
 
 class ZRotationWidget(pg.GraphicsLayoutWidget):
+    """
+    Capture the rotation of the sytem around the z-axis
+    """
+    
     def __init__(self):
         super().__init__()
 
@@ -41,39 +50,133 @@ class ZRotationWidget(pg.GraphicsLayoutWidget):
         self.label.setText(direction)
 
 
-class RobotVelocityStateWidget(QWidget):
-    def __init__(self):
-        super().__init__()
+class SensorsChartSignals(QObject):
+    imu = pyqtSignal(dict)
+    odometry = pyqtSignal(dict)
+    
+class StateVelocityContorller(QThread):
+    def __init__(self, 
+                imu_data_queue: multiprocessing.Queue,
+                odometry_data_queue: multiprocessing.Queue,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.signals = SensorsChartSignals()
+        self.stop_event = threading.Event()
+        
+        self.imu_data_queue = imu_data_queue
+        self.odometry_data_queue = odometry_data_queue
+        
+    def run(self):
+        while not self.stop_event.is_set():
+            # Handle Imu data
+            if not self.imu_data_queue.empty():
+                data = self.imu_data_queue.get()
+                print("Data in IMU velocity Widget: ", data)
+                
+                if type(data) is dict:
+                    for k in data.keys():
+                        # z - axis velocity
+                        # rot - rotation in the rover system
+                        if k in ["z", "rot"]:
+                            if type(data[k]) is not list:
+                                data[k] = [data[k]]
+                
+                self.signals.imu.emit(data)
+            else:
+                #print("Queue in Qthread is empty")
+                pass
+            
+            # Handle the odometry queue
+            if not self.odometry_data_queue.empty():
+                data = self.odometry_data_queue.get()
+                print("Data in ODOMETRY velocity Widget: ", data)
+                
+                if type(data) is dict:
+                    for k in data.keys():
+                        # w{l,r}_t the left and the right target
+                        # w{l,r}_v the left and the right current velocity
+                        if k in ["wl_t", "wr_t", "wl_v", "wr_v"]:
+                            if type(data[k]) is not list:
+                                data[k] = [data[k]]
+                
+                self.signals.odometry.emit(data)
+            else:
+                #print("Queue in Qthread is empty")
+                pass
+                
+            # TODO revieww the timeR
+            time.sleep(0.0001)
+        logging.info("[StateVelocityContorller] Thread ended")
+    
+    def stop(self):
+        logging.info("[VelocityWidget] QThread stop fired")
+        self.stop_event.set()
 
-        self.setWindowTitle("Rover State - Velocity")
+class RobotVelocityStateWidget(QWidget):
+    """
+    Plot the target velocity and the current velocity
+    applied to the both wheel of the system
+    """
+    
+    def __init__(self, 
+                imu_data_queue: multiprocessing.Queue,
+                odometry_data_queue: multiprocessing.Queue, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Objects
+        self.controller = StateVelocityContorller(
+            imu_data_queue=imu_data_queue,
+            odometry_data_queue=odometry_data_queue
+        )
+        self.draw_lock = threading.Lock()
+        
         layout = QHBoxLayout(self)
 
         # ===== LEFT COLUMN =====
         left_layout = QVBoxLayout()
 
+        styles = {"color": "white", "font-size": "10px" }
         # plot principal
-        self.main_plot = pg.PlotWidget(title="Main Curve")
+        self.main_plot = pg.PlotWidget(title="Z-Axis Velocity")
+        self.main_plot.setFixedWidth(300)
+        self.main_plot.setFixedHeight(150)
+        self.main_plot.setLabel("left", "m/s", **styles)
+        self.main_plot.setLabel("bottom", "time (ms)", **styles)
+            
         self.main_plot.setBackground("#1E1E1E")
-        self.curve = self.main_plot.plot(pen='c')
+        self.z_axis_velocity_curve = self.main_plot.plot(pen='c')
 
         left_layout.addWidget(self.main_plot)
 
         # gauge
         self.gauge = ZRotationWidget()
+        self.gauge.setFixedWidth(300)
+        self.gauge.setFixedHeight(150)
         left_layout.addWidget(self.gauge)
 
         # ===== RIGHT COLUMN =====
         right_layout = QVBoxLayout()
 
-        self.plot1 = pg.PlotWidget(title="Velocity Wheel Left")
-        self.wheel_left_command = self.plot1.plot(pen='r')
+        self.plot1 = pg.PlotWidget(title="Wheel L")
+        self.plot1.setFixedWidth(300)
+        self.plot1.setFixedHeight(150)
         self.plot1.setBackground("#1E1E1E")
-        self.wheel_left_target = self.plot1.plot(pen='g')
+        self.plot1.addLegend()
+        self.plot1.setLabel("left", "m/s", **styles)
+        self.plot1.setLabel("bottom", "time (ms)", **styles)
+        self.wheel_left_command = self.plot1.plot(pen='r', name="Command")
+        self.wheel_left_target = self.plot1.plot(pen='g', name="Target")
 
-        self.plot2 = pg.PlotWidget(title="Velocity Wheel Right")
+        self.plot2 = pg.PlotWidget(title="Wheel R")
+        self.plot2.setFixedWidth(300)
+        self.plot2.setFixedHeight(150)
         self.plot2.setBackground("#1E1E1E")
-        self.wheel_right_command = self.plot2.plot(pen='y')
-        self.wheel_right_target = self.plot2.plot(pen='m')
+        self.plot2.addLegend()
+        self.plot2.setLabel("left", "m/s", **styles)
+        self.plot2.setLabel("bottom", "time (ms)", **styles)
+        self.wheel_right_command = self.plot2.plot(pen='y', name="Command")
+        self.wheel_right_target = self.plot2.plot(pen='m', name="Target")
 
         right_layout.addWidget(self.plot1)
         right_layout.addWidget(self.plot2)
@@ -83,29 +186,96 @@ class RobotVelocityStateWidget(QWidget):
 
         # ===== DATA =====
         self.maxlen = 200
-        self.x = deque(maxlen=self.maxlen)
+        time_now = datetime.now(timezone.utc).timestamp()
+        self.x_imu_time = deque([time_now - i for i in range(self.maxlen)], maxlen=self.maxlen)
+        self.x_odometry_time = self.x_imu_time.copy()
 
-        self.y_main = deque(maxlen=self.maxlen)
+        self.y_z = deque(maxlen=self.maxlen)
 
-        self.y1_1 = deque(maxlen=self.maxlen)
-        self.y1_2 = deque(maxlen=self.maxlen)
+        self.y_wl_t = deque(maxlen=self.maxlen)
+        self.y_wl_c = deque(maxlen=self.maxlen)
 
-        self.y2_1 = deque(maxlen=self.maxlen)
-        self.y2_2 = deque(maxlen=self.maxlen)
+        self.y_wr_t = deque(maxlen=self.maxlen)
+        self.y_wr_c = deque(maxlen=self.maxlen)
 
         self.t = 0
 
         # timer animation
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)
-        self.timer.start(50)
+        #self.timer.start(50)
+        
+        self.controller.signals.imu.connect(self.slot_update_rotation_chart)
+        self.controller.signals.odometry.connect(self.slot_update_wlr_chart)
+        
+        self.controller.start()
+        
+    def stop(self):
+        self.timer.stop()
+        
+        try:
+            self.draw_lock.release()
+            self.draw_lock.release_lock()
+        except Exception as e:
+            pass
+        
+        self.controller.stop()
+        try:
+            self.controller.signals.imu.disconnect(self.slot_update_rotation_chart)
+            self.controller.signals.odometry.disconnect(self.slot_update_wlr_chart)
+            self.controller.signals.disconnect()
+        except Exception as e:
+            pass
+        self.controller.requestInterruption()
+        self.controller.quit()
+        self.controller.wait()
+        
+    def slot_update_wlr_chart(self, data: dict):
+        """
+        Update the velocity
+        charts of right and left wheels
+        """        
+        with self.draw_lock:
+            self.x_odometry_time.extend(np.arange(1, len(data["wl_t"])+1) * data["batch_dt"]["wl"])
+            
+            self.y_wl_t.extend(data["wl_t"])
+            self.y_wl_c.extend(data["wl_c"])
+            
+            self.y_wrs_t.extend(data["wr_t"])
+            self.y_wr_c.extend(data["wr_c"])
+            
+            # Draw
+            self.wheel_left_command.setData(self.x_odometry_time, self.y_wl_t)
+            self.wheel_left_target.setData(self.x_odometry_time, self.y_wl_c)
+
+            self.wheel_right_command.setData(self.x_odometry_time, self.y_wr_t)
+            self.wheel_right_target.setData(self.x_odometry_time, self.y_wr_c)
+           
+
+    def slot_update_rotation_chart(self, data: dict):
+        """
+        Update the rotationnary angle
+        """
+        with self.draw_lock:
+            self.x_imu_time.extend(np.arange(1, len(data["z"])+1) * data["batch_dt"]["z"])
+            
+            self.y_z.extend(data["z"])
+            
+            # Draw
+            self.z_axis_velocity_curve.setData(self.x_imu_time, self.y_z)
+            self.gauge.update_gauge(0, data["rot"][-1]) # Just the last value
+
 
     def update(self):
+        """
+        @deprecated
+        """
+        
         self.t += 0.1
 
         # génération données
         x_val = self.t
-        y_main = np.sin(self.t)
+        y_z = np.sin(self.t)
 
         y1 = np.sin(self.t * 1.2)
         y2 = np.cos(self.t * 0.8)
@@ -115,22 +285,22 @@ class RobotVelocityStateWidget(QWidget):
 
         # append
         self.x.append(x_val)
-        self.y_main.append(y_main)
+        self.y_z.append(y_z)
 
-        self.y1_1.append(y1)
-        self.y1_2.append(y2)
+        self.y_wl_t.append(y1)
+        self.y_wl_c.append(y2)
 
-        self.y2_1.append(y3)
-        self.y2_2.append(y4)
+        self.y_wr_t.append(y3)
+        self.y_wr_c.append(y4)
 
         # update plots
-        self.curve.setData(self.x, self.y_main)
+        self.z_axis_velocity_curve.setData(self.x, self.y_z)
 
-        self.wheel_left_command.setData(self.x, self.y1_1)
-        self.wheel_left_target.setData(self.x, self.y1_2)
+        self.wheel_left_command.setData(self.x, self.y_wl_t)
+        self.wheel_left_target.setData(self.x, self.y_wl_c)
 
-        self.wheel_right_command.setData(self.x, self.y2_1)
-        self.wheel_right_target.setData(self.x, self.y2_2)
+        self.wheel_right_command.setData(self.x, self.y_wr_t)
+        self.wheel_right_target.setData(self.x, self.y_wr_c)
 
         # angles pour gauge
         angle1 = (np.sin(self.t) + 1) / 2 * np.pi

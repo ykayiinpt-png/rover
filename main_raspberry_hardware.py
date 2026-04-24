@@ -49,8 +49,12 @@ from src.raspberry.communication.process import CommunicationProcess
 from src.raspberry.pi import RaspberryPi
 
 def main(host: str, port: int, features: list[str]):
-    raspberry_send_queue = multiprocessing.Queue(maxsize=1000)
-    raspberry_receive_queue = multiprocessing.Queue(maxsize=1000)
+    map_data_send_queue = multiprocessing.Queue(maxsize=1000)
+    ultrasound_data_sent_queue = multiprocessing.Queue(maxsize=1000)
+    imu_data_send_queue=multiprocessing.Queue(maxsize=1000)
+    odometry_data_sent_queue = multiprocessing.Queue(maxsize=1000)
+    commands_send_queue = multiprocessing.Queue(maxsize=1000)
+    commands_receive_queue = multiprocessing.Queue(maxsize=1000)
     
     communication_process= None
     
@@ -58,7 +62,12 @@ def main(host: str, port: int, features: list[str]):
     if "data" in features:
         communication_process = CommunicationProcess(
             host=host, port=port,
-            send_queue=raspberry_send_queue, receive_queue=raspberry_receive_queue
+            ultrasound_data_sent_queue=ultrasound_data_sent_queue,
+            imu_data_send_queue=imu_data_send_queue,
+            odometry_data_sent_queue=odometry_data_sent_queue,
+            commands_send_queue=commands_send_queue,
+            commands_receive_queue=commands_receive_queue,
+            map_data_send_queue=map_data_send_queue,
         )
     
     sonar_array=UltrasoundSensorArray(
@@ -82,7 +91,12 @@ def main(host: str, port: int, features: list[str]):
         sonars_arr_obj=sonar_array,
         imu=IMUSensor(name="i"),
         
-        ultrasound_send_queue=raspberry_send_queue#, receive_queue=raspberry_receive_queue
+        ultrasound_data_sent_queue=ultrasound_data_sent_queue,
+        imu_data_send_queue=imu_data_send_queue,
+        odometry_data_sent_queue=odometry_data_sent_queue,
+        commands_send_queue=commands_send_queue,
+        commands_receive_queue=commands_receive_queue,
+        map_data_send_queue=map_data_send_queue,
     )
     print(robot_ctrl)
     
@@ -104,11 +118,19 @@ def main(host: str, port: int, features: list[str]):
     finally:
         logging.info("[RaspbarryPi] In finally")
         
-        raspberry_send_queue.close()
-        raspberry_receive_queue.close()
+        map_data_send_queue.close()
+        ultrasound_data_sent_queue.close()
+        imu_data_send_queue.close()
+        odometry_data_sent_queue.close()
+        commands_send_queue.close()
+        commands_receive_queue.close()
         
-        raspberry_send_queue.join_thread()
-        raspberry_receive_queue.join_thread()
+        map_data_send_queue.join_thread()
+        ultrasound_data_sent_queue.join_thread()
+        imu_data_send_queue.join_thread()
+        odometry_data_sent_queue.join_thread()
+        commands_send_queue.join_thread()
+        commands_receive_queue.join_thread()
         
         logging.info("[RaspbarryPi] Queues closed")
         

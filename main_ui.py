@@ -33,6 +33,7 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
     map_data_queue = None
     sensors_ultrasound_data_queue = None
     sensors_imu_data_queue = None
+    odometry_data_queue = None
     commands_send_queue = None
     commands_receive_queue = None
     
@@ -49,6 +50,8 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         video_frame_compute_result_queue = multiprocessing.Queue(maxsize=1000)
         map_data_queue = multiprocessing.Queue(maxsize=1000)
         sensors_ultrasound_data_queue = multiprocessing.Queue(maxsize=1000)
+        sensors_imu_data_queue=multiprocessing.Queue(maxsize=1000)
+        odometry_data_queue = multiprocessing.Queue(maxsize=1000)
         commands_send_queue = multiprocessing.Queue(maxsize=1000)
         commands_receive_queue = multiprocessing.Queue(maxsize=1000)
         
@@ -64,11 +67,12 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
             # Sensors data queues,
             map_data_queue=map_data_queue,
             sensors_ultrasound_data_queue=sensors_ultrasound_data_queue,
-            sensors_imu_data_queue=None,
+            sensors_imu_data_queue=sensors_imu_data_queue,
+            odometry_data_queue=odometry_data_queue,
             
             # Commands
-            commands_send_queue=commands_send_queue,
-            commands_receive_queue=commands_receive_queue,            
+            command_sent_data_queue=commands_send_queue,
+            command_receive_data_queue=commands_receive_queue,            
         )
         
         # Start the video frame processing
@@ -91,7 +95,8 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
                 host=mqtt_host, port=mqtt_port,
                 map_data_queue=map_data_queue,
                 sensors_ultrasound_data_queue=sensors_ultrasound_data_queue,
-                sensors_imu_data_queue=sensors_imu_data_queue
+                sensors_imu_data_queue=sensors_imu_data_queue,
+                odometry_data_queue=odometry_data_queue
             )
         
         if "video" in features:
@@ -117,9 +122,15 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         video_frame_compute_result_queue.join_thread()
         
         map_data_queue.close()
-        map_data_queue.join_thread()
         sensors_ultrasound_data_queue.close()
+        sensors_imu_data_queue.close()
+        odometry_data_queue.close()
+        
         sensors_ultrasound_data_queue.join_thread()
+        sensors_imu_data_queue.join_thread()
+        odometry_data_queue.join_thread()
+        map_data_queue.join_thread()
+        
         
         commands_send_queue.close()
         commands_receive_queue.close()
@@ -202,7 +213,7 @@ if __name__ == "__main__":
         "--feature",
         type=str,
         action='append',
-        choices=["video", "data", "commands"],
+        choices=["none", "video", "data", "commands"],
         required=True,
         help="Features to activate, video processing, data excahnge and remote commands"
     )

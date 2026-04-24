@@ -94,7 +94,9 @@ class RaspberryCommandsAckProcess(multiprocessing.Process):
         self.mqtt_client = MqttClient(
             uri=self.host, port=self.port,
             # Only topics for data reception
-            topics=["slam/commands/remote"],
+            # Read command exécute for decision taking
+            # the rover system itself
+            topics=["slam/rover/commands/local"],
             async_event_loop=loop
         )
         

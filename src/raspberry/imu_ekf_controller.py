@@ -7,11 +7,16 @@ from src.raspberry.ekf.imu import ImuEKF
 from src.raspberry.hardware.rover import Rover, RoverThread
 from src.raspberry.hardware.sensors.imu import IMUSensor
 from src.raspberry.hardware.sensors.ultrasound import UltrasoundSensorArray
-from src.raspberry.hardware.thread import UltrasoundThread
+from src.raspberry.hardware.thread import IMUThread, UltrasoundThread
 
 class ImuEkfController:
     def __init__(self, rover: Rover, sonars_arr_obj: UltrasoundSensorArray, imu: IMUSensor,
-                ultrasound_send_queue: multiprocessing.Queue):
+                ultrasound_data_sent_queue: multiprocessing.Queue,
+                imu_data_send_queue: multiprocessing.Queue,
+                odometry_data_sent_queue: multiprocessing.Queue,
+                commands_send_queue: multiprocessing.Queue,
+                commands_receive_queue: multiprocessing.Queue,
+                map_data_send_queue: multiprocessing.Queue):
         self.sonars = sonars_arr_obj
         self.imu = imu
         
@@ -28,9 +33,18 @@ class ImuEkfController:
         # Threads
         self.ultra_sound_thread = UltrasoundThread(
             sonars_arr=sonars_arr_obj,
-            send_queue=ultrasound_send_queue
+            send_queue=ultrasound_data_sent_queue
         )
-        self.rover_thread = RoverThread(rover=rover)
+        
+        self.imu_thread = IMUThread(
+            sensor_hw=imu,
+            imu_data_send_queue=imu_data_send_queue
+        )
+        
+        self.rover_thread = RoverThread(
+            rover=rover,
+            odometry_data_sent_queue=odometry_data_sent_queue
+        )
         
         self.running = True
 
@@ -42,6 +56,8 @@ class ImuEkfController:
         print("Démarrage de la boucle principale...")
         self.ultra_sound_thread.start()
         logging.info("Robot Controller: Ultrasound thread started")
+        self.imu_thread.start()
+        logging.info("Robot Controller: Imu thread has started")
         self.rover_thread.start()
         logging.info("Robot Controller: Rover Thread thread started")
         print("Robot prêt et EKF initialisé.")
@@ -62,11 +78,8 @@ class ImuEkfController:
 
                 if loop_dt >= self.dt_kalman:
                     # --- A. ACQUISITION DES DONNÉES FILTRÉES ---
-                    self.imu.update()
-                    imu_data = self.imu.get_data()
-                    accel_x = imu_data['accel']["x"]  # Accélération filtrée
-                    gyro_z = imu_data['gyro']["z"]    # Vitesse angulaire filtrée
-                    yaw_imu = imu_data['yaw']
+                    imu_data = self.imu_thread.get_latest_data()
+                    accel_x, gyro_z, yaw_imu  =  imu_data
                     print("Gyro data", imu_data)
 
                     # --- B. ÉTAPE DE PRÉDICTION (EKF) ---
@@ -147,8 +160,8 @@ class ImuEkfController:
                 y_obs_list.append(0.0 - dist_y)
 
         # Faire la moyenne des observations pour X et Y
-        x_s = sum(x_obs_list) / len(x_obs_list) if x_obs_list else None
-        y_s = sum(y_obs_list) / len(y_obs_list) if y_obs_list else None
+        x_s = sum(x_obs_list) / len(x_obs_list) if len(x_obs_list) > 0 else None
+        y_s = sum(y_obs_list) / len(y_obs_list) if len(y_obs_list) > 0 else None
 
         return x_s, y_s
 
@@ -160,8 +173,10 @@ class ImuEkfController:
         self.ultra_sound_thread.shutdown()
         self.ultra_sound_thread.join()
         
+        self.imu_thread.shutdown()
+        self.imu_thread.join()
+        
         self.rover_thread.shutdown()
         self.rover_thread.join()
         
-        self.imu.stop()
         print("Système arrêté proprement.")

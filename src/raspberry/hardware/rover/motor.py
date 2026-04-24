@@ -33,7 +33,7 @@ class RMotor:
             duty_cycle = -power # On repasse en positif pour le PWM
             
         # Limitation de sécurité
-        duty_cycle = max(0, min(duty_cycle, 90))
+        duty_cycle = max(0, min(duty_cycle, 99))
         print("Setting duty cylce: ", duty_cycle)
         self.pwm.ChangeDutyCycle(duty_cycle)
 

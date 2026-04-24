@@ -66,7 +66,7 @@ class CommunicationProcess(multiprocessing.Process):
         self.mqtt_client = MqttClient(
             uri=self.host, port=self.port,
             # Only topics for data reception
-            topics=["slam/commands/raspberry"],
+            topics=["slam/commands/remote"],
             async_event_loop=loop
         )
         

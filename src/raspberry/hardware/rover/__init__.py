@@ -1,4 +1,6 @@
+from datetime import datetime, timezone
 import logging
+import multiprocessing
 import threading
 import time
 
@@ -30,6 +32,8 @@ class Rover:
         
         self.target_v_l = 0.0
         self.target_v_r = 0.0
+        self.command_v_l = 0.0
+        self.command_v_r = 0.0
         
         self.wheel_base_width = wheel_base_width
         
@@ -43,11 +47,11 @@ class Rover:
     def move(self, linear, angular=0):
         """Set target velocity (m/s et rad/s)"""
         
-        MAX_LINEAR =  90 #0.5  # 0.5 m/s
+        MAX_LINEAR =  0.2 #0.5  # 0.5 m/s
         linear = max(min(linear, MAX_LINEAR), -MAX_LINEAR)
         
-        self.target_v_l = linear - angular #linear - (angular * self.wheel_base_width / 2)
-        self.target_v_r = linear + angular #linear + (angular * self.wheel_base_width / 2)
+        self.target_v_l = linear - (angular * self.wheel_base_width / 2)
+        self.target_v_r = linear + (angular * self.wheel_base_width / 2)
         
     def move_right(self, speed=0.5):
         """Tourne sur place vers la droite"""
@@ -79,29 +83,28 @@ class Rover:
     def update(self, dt):
         """
         Boucle de contrôle appelée par le RobotController
-        """
+        """        
+        # 1. Obtenir les vitesses réelles via odométrie
+        movement = self.odo.get_movement()
+        dist_l = movement["left"]
+        dist_r = movement["right"]
+        
+        self.command_v_l = dist_l / dt
+        self.command_v_r = dist_r / dt
         
         if not self.active_pid:
             # Apply the same velocity
             self.motor_l.set_speed(self.target_v_l)
             self.motor_r.set_speed(self.target_v_r)
             print("Set Motor speed")
-            return
-        
-        # 1. Obtenir les vitesses réelles via odométrie
-        _, dist_l = self.odo.left_wheel.get_delta_and_reset()
-        _, dist_r = self.odo.right_wheel.get_delta_and_reset()
-        
-        v_real_l = dist_l / dt
-        v_real_r = dist_r / dt
-        
-        # 2. Calculer le PWM via PID
-        out_l = self.pid_l.compute(self.target_v_l, v_real_l)
-        out_r = self.pid_r.compute(self.target_v_r, v_real_r)
-        
-        # 3. Appliquer aux moteurs
-        self.motor_l.set_speed(out_l)
-        self.motor_r.set_speed(out_r)
+        else:
+            # 2. Calculer le PWM via PID
+            out_l = self.pid_l.compute(self.target_v_l, self.command_v_l)
+            out_r = self.pid_r.compute(self.target_v_r, self.command_v_r)
+            
+            # 3. Appliquer aux moteurs
+            self.motor_l.set_speed(out_l)
+            self.motor_r.set_speed(out_r)
         
     def stop(self):
         self.motor_l.stop()
@@ -114,7 +117,7 @@ class Rover:
         
 
 class RoverThread(threading.Thread):
-    def __init__(self, rover: Rover, *args, **kwargs):
+    def __init__(self, rover: Rover, odometry_data_sent_queue: multiprocessing.Queue, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         self.rover = rover
@@ -123,6 +126,10 @@ class RoverThread(threading.Thread):
         self.daemon = True
         
         self.hz = 50 # Frequency of PID (20ms)
+        self.odometry_data_sent_queue = odometry_data_sent_queue
+        
+        self.buffer = []
+        self.buffer_size = 10
         
     def run(self):
         """Boucle haute fréquence du PID"""
@@ -137,6 +144,37 @@ class RoverThread(threading.Thread):
             if dt >= (1.0 / self.hz):
                 self.rover.update(dt)
                 print("Call Update on rover")
+                
+                data = {
+                    "wl_t": self.rover.target_v_l,
+                    "wl_c": self.rover.command_v_l,
+                    "wr_t": self.rover.target_v_r,
+                    "wr_c": self.rover.command_v_r
+                }
+                
+                self.buffer.append(data)
+                if len(self.buffer) == self.buffer_size:
+                    current_timestamp = datetime.now(timezone.utc).timestamp()
+                    data = {
+                        "topic": "slam/rover/data/odometry",
+                        "payload": {
+                            "time": current_timestamp,
+                            "batch_dt": { "ax": 0.01, "rot": 0.01 },
+                            # Ultrasound
+                            "wl_t": [m['wl_t'] for m in self.buffer],
+                            "wl_c": [m['wl_c'] for m in self.buffer],
+                            "wr_t": [m['wr_t'] for m in self.buffer],
+                            "wr_c": [m['wr_c'] for m in self.buffer],
+                        }
+                    }
+                    
+                    # Clear the buffer
+                    self.buffer = []
+                    
+                    self.send_queue.put(data)
+                    
+                    print("\n\n\ Odometry Data sent")
+                    print(data)
                 
                 last_time = now
             

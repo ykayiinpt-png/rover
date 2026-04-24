@@ -109,4 +109,4 @@ class IMUSensor:
         }
         
     def stop(self):
-        pass
+        logging.info("IMU Sensor: stopped")
