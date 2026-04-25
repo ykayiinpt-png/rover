@@ -102,7 +102,7 @@ class KeyboardJoystickWidget(QWidget):
         self.axisChanged.emit(0.0, 0.0)
         
         self.commands_send_queue.put({
-            "topic": "slam/commands/raspberry",
+            "topic": "slam/rover/commands/remote",
             "payload": {"x": 0, "y": 0, "a": "stop"}
         })
         

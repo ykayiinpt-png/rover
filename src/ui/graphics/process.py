@@ -110,6 +110,7 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
         self.map_result_data_queue = map_data_queue
         self.sensors_ultrasound_data_queue = sensors_ultrasound_data_queue
         self.sensors_imu_data_queue = sensors_imu_data_queue
+        self.odometry_data_queue = odometry_data_queue
         
     def run(self):
         try:
