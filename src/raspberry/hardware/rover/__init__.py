@@ -18,22 +18,31 @@ class Rover:
     also the PID in order to make the wheels speed stable
     """
     
-    def __init__(self, odo: WheelOdometry, pins_left, pins_right, wheel_base_width=0.10,  active_pid=False):
+    def __init__(self, 
+                odo: WheelOdometry,
+                pins_left, pins_right,
+                pid_left, pid_right,
+                wheel_base_width=0.10,  active_pid=False):
         # pins_left = {'pwm': 12, 'dir': 24}
         self.motor_l = RMotor(pins_left['pwm'], pins_left['in1_pin'], pins_left['in2_pin'])
         self.motor_r = RMotor(pins_right['pwm'], pins_right['in1_pin'], pins_right['in2_pin'])
         self.odo = odo
         
         self.active_pid = active_pid
-        # TODO
-        # PID (ajustez Kp, Ki, Kd selon vos tests)
-        self.pid_l = PIDController(1.0, 0.1, 0.05)
-        self.pid_r = PIDController(1.0, 0.1, 0.05)
+        
+        # In void to have 0.3m/s
+        #self.pid_l = PIDController(10.0, 1.9, 0.1)
+        #self.pid_r = PIDController(10.0, 1.9, 0.0)
+        if pid_left is not None and pid_right is not None:
+            self.pid_l = PIDController(pid_left["P"], pid_left["I"], pid_left["D"])
+            self.pid_r = PIDController(pid_right["P"], pid_right["I"], pid_right["D"])
         
         self.target_v_l = 0.0
         self.target_v_r = 0.0
         self.command_v_l = 0.0
         self.command_v_r = 0.0
+        self.pwm_l = 0.0
+        self.pwm_r = 0.0
         
         self.wheel_base_width = wheel_base_width
         
@@ -47,7 +56,7 @@ class Rover:
     def move(self, linear, angular=0):
         """Set target velocity (m/s et rad/s)"""
         
-        MAX_LINEAR =  0.2 #0.5  # 0.5 m/s
+        MAX_LINEAR =  0.5 #0.5  # 0.5 m/s
         linear = max(min(linear, MAX_LINEAR), -MAX_LINEAR)
         
         self.target_v_l = linear - (angular * self.wheel_base_width / 2)
@@ -86,8 +95,9 @@ class Rover:
         """        
         # 1. Obtenir les vitesses réelles via odométrie
         movement = self.odo.get_movement()
-        dist_l = movement["left"]
-        dist_r = movement["right"]
+        dist_l = movement["left"]["dist"]
+        dist_r = movement["right"]["dist"]
+        print("Dist_l", dist_l)
         
         self.command_v_l = dist_l / dt
         self.command_v_r = dist_r / dt
@@ -96,15 +106,19 @@ class Rover:
             # Apply the same velocity
             self.motor_l.set_speed(self.target_v_l)
             self.motor_r.set_speed(self.target_v_r)
-            print("Set Motor speed")
+            print("Set Motor speed No PID")
         else:
             # 2. Calculer le PWM via PID
-            out_l = self.pid_l.compute(self.target_v_l, self.command_v_l)
-            out_r = self.pid_r.compute(self.target_v_r, self.command_v_r)
+            self.pwm_l = self.pid_l.compute(self.target_v_l, self.command_v_l)
+            self.pwm_r = self.pid_r.compute(self.target_v_r, self.command_v_r)
             
             # 3. Appliquer aux moteurs
-            self.motor_l.set_speed(out_l)
-            self.motor_r.set_speed(out_r)
+            #print(self.pwm_l)
+            #print(self.pwm_r)
+            self.motor_l.set_speed(self.pwm_l + 10) # 40 bias
+            self.motor_r.set_speed(self.pwm_r + 10)
+            
+            print("Set Motor speed With PID")
         
     def stop(self):
         self.motor_l.stop()
@@ -129,7 +143,7 @@ class RoverThread(threading.Thread):
         self.odometry_data_sent_queue = odometry_data_sent_queue
         
         self.buffer = []
-        self.buffer_size = 10
+        self.buffer_size = 20
         
     def run(self):
         """Boucle haute fréquence du PID"""
@@ -149,7 +163,9 @@ class RoverThread(threading.Thread):
                     "wl_t": self.rover.target_v_l,
                     "wl_c": self.rover.command_v_l,
                     "wr_t": self.rover.target_v_r,
-                    "wr_c": self.rover.command_v_r
+                    "wr_c": self.rover.command_v_r,
+                    "wl_p": abs(self.rover.pwm_l),
+                    "wr_p": abs(self.rover.pwm_r)
                 }
                 
                 self.buffer.append(data)
@@ -165,13 +181,15 @@ class RoverThread(threading.Thread):
                             "wl_c": [m['wl_c'] for m in self.buffer],
                             "wr_t": [m['wr_t'] for m in self.buffer],
                             "wr_c": [m['wr_c'] for m in self.buffer],
+                            "wl_p": [m['wl_p'] for m in self.buffer],
+                            "wr_p": [m['wr_p'] for m in self.buffer],
                         }
                     }
                     
                     # Clear the buffer
                     self.buffer = []
                     
-                    self.send_queue.put(data)
+                    self.odometry_data_sent_queue.put(data)
                     
                     print("\n\n\ Odometry Data sent")
                     print(data)
@@ -179,7 +197,7 @@ class RoverThread(threading.Thread):
                 last_time = now
             
             # Make some pause
-            time.sleep(0.001)
+            time.sleep(0.1)
         
         logging.info("[RoverThread] Loop finished")
         

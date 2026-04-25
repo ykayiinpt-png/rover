@@ -14,8 +14,11 @@ class PIDController:
         if dt <= 0: return 0
         
         error = target_speed - current_speed
+        print("target_speed diff: ", error)
         self.integral += error * dt
         derivative = (error - self.prev_error) / dt
+        print("Derivation: ", derivative)
+        print("Integral: ", self.integral)
         
         output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
         

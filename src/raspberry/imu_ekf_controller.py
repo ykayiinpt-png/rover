@@ -62,7 +62,7 @@ class ImuEkfController:
         logging.info("Robot Controller: Rover Thread thread started")
         print("Robot prêt et EKF initialisé.")
         
-        #self.rover_thread.rover.move(0, -14)
+        self.rover_thread.rover.move(0.3, 0)
 
     def run(self):
         print("[CRITICAL] Don't move the robot for a while")

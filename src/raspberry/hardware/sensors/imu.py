@@ -36,6 +36,8 @@ class IMUSensor:
         self.gyro_bias = 0.0
         self.is_calibrated = False
         
+        self.filter = IMUFilter()
+        
     def calibrate(self, samples=200):
         print("Calibration de l'IMU... Ne pas bouger !")
         sums = 0
@@ -92,7 +94,7 @@ class IMUSensor:
             # 3. Intégration du Yaw (Lacet)
             # On n'intègre que si le mouvement dépasse un petit seuil (Deadband)
             if abs(gyro_z_instant) > 0.05: # Filtre de bruit de 0.05 deg/s
-                self.orientation['yaw'] += gyro_z_instant * dt
+                self.orientation['yaw'] += self.filter.filter(gyro_z_instant * dt)
             
             self.last_update = now
         except OSError as e:
