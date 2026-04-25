@@ -101,7 +101,7 @@ class IMUThread(threading.Thread):
                         "batch_dt": { "ax": 0.01, "rot": 0.01 },
                         # Ultrasound
                         "rot": [m['yaw'] for m in self.buffer],
-                        "a_x": [m['accel']['x'] for m in self.buffer],
+                        "g_z": [m['gyro']['z'] for m in self.buffer],
                     }
                 }
                 

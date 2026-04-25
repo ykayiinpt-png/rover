@@ -147,8 +147,9 @@ class Rover:
         
         # And we reset the error integral to avoid saturation
         # when we will restart the robot
-        self.pid_l.interrupt()
-        self.pid_r.interrupt()
+        # [NOTE] By exprience no need to turn down the pid unless stopped
+        #self.pid_l.interrupt()
+        #self.pid_r.interrupt()
         
         self.odo.left_wheel.reset()
         self.odo.right_wheel.reset()
@@ -156,7 +157,7 @@ class Rover:
         # We block any further change for a number of cycle
         self.target_v_lock =  {
             # Was the rover stopped before ? if yet use a smal cyle number
-            "n_cycles": 1 if self._stopped else 2,
+            "n_cycles": 1 if self._stopped else 10,
             "active": True,
             "command": cmd
         }
@@ -247,6 +248,11 @@ class Rover:
         print(f"Targets: l={self.target_v_l} r={self.target_v_r}")
         print(f"Command: l={self.command_v_l} r={self.command_v_r}")
         
+        # Clamp Velocity
+        # Important
+        if abs(self.target_v_l - self.command_v_l > 400) or abs(self.target_v_r - self.command_v_l) > 400:
+            self.change_direction(self.last_command)
+        
         self.update_cycle_counter += 1
         if self.update_cycle_counter * dt >= 10:
             # We expect the velocity to be stable at this time
@@ -274,10 +280,8 @@ class Rover:
         self.pwm_r += self.pwm_bais_r + Kpwm
         
         
-        #self.motor_l.set_speed(self.pwm_l * sign(self.target_v_l))
-        #self.motor_r.set_speed(self.pwm_r * sign(self.target_v_r))
-        self.motor_l.set_speed(self.pwm_l)
-        self.motor_r.set_speed(self.pwm_r)
+        self.motor_l.set_speed(self.pwm_l * sign(self.target_v_l))
+        self.motor_r.set_speed(self.pwm_r * sign(self.target_v_r))
         
         # In case we have a target velock lock, we decrement and check if 
         # the required number of cycle has passed in order to execute
