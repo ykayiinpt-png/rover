@@ -58,7 +58,7 @@ class SlidingWindow:
 #         """
 #         self.timeout = 0.2 
         
-#         self.per_tick = (wheel_diameter * np.pi) / ticks_per_rev
+#         self.distance_per_tick = (wheel_diameter * np.pi) / ticks_per_rev
         
 #         self.filter = SlidingWindow(size=1)
         
@@ -115,24 +115,36 @@ class WheelEncoder:
     Encoder used to measure the real velocity of wheel
     """
     
-    def __init__(self, name, pin, ticks_per_rev, wheel_diameter, velocity_smoothing_alpha=0.99):
+    def __init__(self, name, pin, 
+                ticks_per_rev, wheel_diameter,
+                min_ticks_delta=2,
+                lpf_1_alpha=0.8,
+                window_filter_size=2):
+        """
+        :param lpf_1_alpha: the alpha coefficient fo the first order filter
+        applied to the computed velocity 
+        """
+        
         self.name = name
         self.pin = pin
         """
         Tick per revolution
         """
         self.ticks_per_rev = ticks_per_rev
-        self.per_tick = (wheel_diameter * 3.14159) / ticks_per_rev
+        self.distance_per_tick = float((wheel_diameter * np.pi) / ticks_per_rev)
         self.wheel_diameter = wheel_diameter
         
-        #self.filter = SlidingWindow(size=1000)
-        self.filter =  SlidingWindow(size=5) # LowPassFilter1Order(alpha=0.9) # SlidingWindow(size=4) #(alpha=velocity_smoothing_alpha)
+        #self.filter = SlidingWindow(size=window_filter_size)
+        self.filter =  LowPassFilter1Order(alpha=lpf_1_alpha) 
         
+        self.min_ticks_delta = min_ticks_delta
         self.total_ticks = 0
         self.last_delta_ticks = 0
         self.last_time = time.perf_counter()
-        self.velocity_filtered = 0.8 # Will be ued to smooth the velocity and avoid spikes
-        # Set up GPIO
+        self.velocity_filtered = 0
+        
+        ########################
+        # GPIO
         GPIO.setup(self.pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         
         # Interrupt
@@ -154,45 +166,10 @@ class WheelEncoder:
         self.last_delta_ticks = 0
         self.filter.reset()
 
-    def get_delta_and_reset_old(self):
-        """
-        Returns the accumulated ticks since the last call. We found
-        also the velocity and the distance
-        
-        Will be used by filters for position estimation
-        
-        @deprecated
-        """
-        now = time.perf_counter()
-        dt = now - self.last_time
-        
-        current_ticks = self.total_ticks
-        delta = current_ticks - self.last_delta_ticks
-        if abs(delta) < 2:
-            delta = 0
-        
-        self.last_delta_ticks = current_ticks
-        #print(f"{self.name} Delta: ", delta, self.total_ticks)
-        distance = delta * self.per_tick
-        if dt > 0:
-            raw_velocity = distance / dt
-        else:
-            raw_velocity = 0
-        
-        if raw_velocity != 0:
-            self.velocity_filtered = self.filter.filter(raw_velocity)
-        else:
-            self.velocity_filtered = 0
-            distance = 0
-            
-        self.last_time = now
-    
-        return delta, distance,  self.velocity_filtered
-    
     def get_delta_and_reset(self):
         """
-        Returns the accumulated ticks since the last call. We found
-        also the velocity and the distance
+        Returns the accumulated ticks, the distance, and the velocity
+        since the last call
         
         Will be used by filters for position estimation
         """
@@ -201,24 +178,27 @@ class WheelEncoder:
         
         current_ticks = self.total_ticks
         delta = current_ticks - self.last_delta_ticks
-        if abs(delta) < 2:
+        if abs(delta) < self.min_ticks_delta:
             delta = 0
         
+        dist = delta * self.distance_per_tick # TODO: THink is this correct ?
         self.last_delta_ticks = current_ticks
-        #print(f"{self.name} Delta: ", delta, self.total_ticks)
+        
+        # Compute the wheel speed
         if dt > 0:
-            revolutions  = delta / self.ticks_per_rev
-            # Convert to RPM
-            raw_velocity = (revolutions / dt) * 60
+            raw_velocity = (
+                # Compute the revolution
+                (delta / self.ticks_per_rev)
+                / dt
+            ) * 60 # Multiply by 60 convert RPsecond to RevolutionPer Minute
         else:
             raw_velocity = 0
-        
-        
+            
         self.velocity_filtered = self.filter.filter(raw_velocity)
         
+        # Backup time
         self.last_time = now
-
-        dist = 2*np.pi * self.wheel_diameter * self.velocity_filtered * dt
+        
         return delta, dist, self.velocity_filtered
 
 
@@ -228,9 +208,21 @@ class WheelEncoder:
 
 
 class WheelOdometry:
-    def __init__(self, left_pin, right_pin, tpr, diameter):
-        self.left_wheel = WheelEncoder("Gauche", left_pin, tpr, diameter)
-        self.right_wheel = WheelEncoder("Droite", right_pin, tpr, diameter)
+    def __init__(self, left_params, right_params):
+        self.left_wheel = WheelEncoder(
+            name=left_params["name"], pin=left_params["pin"], 
+            ticks_per_rev=left_params["ticks_per_rev"], wheel_diameter=left_params["wheel_diameter"],
+            min_ticks_delta=left_params["min_ticks_delta"],
+            lpf_1_alpha=left_params["lpf_1_alpha"],
+            window_filter_size=left_params["window_filter_size"]
+        )
+        self.right_wheel = WheelEncoder(
+            name=right_params["name"], pin=right_params["pin"], 
+            ticks_per_rev=right_params["ticks_per_rev"], wheel_diameter=right_params["wheel_diameter"],
+            min_ticks_delta=right_params["min_ticks_delta"],
+            lpf_1_alpha=right_params["lpf_1_alpha"],
+            window_filter_size=right_params["window_filter_size"]
+        )
 
     def get_movement(self):
         """

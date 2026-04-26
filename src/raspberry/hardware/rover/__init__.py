@@ -16,7 +16,9 @@ from src.raspberry.hardware.sensors.imu import IMUSensor
 
 class RoverYawEstimator:
     """
-    Rover rotation around the z-axis estimator
+    Estimate Rover rotation around the z-axis estimator
+    with a complementary fusion filter that combines IMU value
+    and odometry
     """
     
     def __init__(self, alpha=0.99, wheel_base=0.1):
@@ -27,7 +29,7 @@ class RoverYawEstimator:
         self.wheel_base = wheel_base
 
     def update(self, gyro_z, d_left, d_right, dt):
-        # IMU (intégration)
+        # IMU Integration (TODO: We will use value provided the IMUSensor directly)
         theta_imu = self.theta + gyro_z * dt
 
         # Odométrie
@@ -36,7 +38,7 @@ class RoverYawEstimator:
         
         print("Theta Odom", theta_odom, "Theta Imu", theta_imu, "dthetah_odom", dtheta_odom)
 
-        # Fusion complémentaire
+        # Complementary fusion
         self.theta = self.alpha * theta_imu + (1 - self.alpha) * theta_odom
         self.theta = wrap_angle(self.theta)
 
@@ -58,57 +60,91 @@ class Rover:
     also the PID in order to make the wheels speed stable
     """
     
+    MODE_MANUAL_NAVIGATION = 0
+    MODE_AUTONOMOUS_NAVIGATION = 0
+    
     def __init__(self,
                 shared_state: dict,
                 odo: WheelOdometry,
                 imu: IMUSensor,
                 imu_sensor_thread_lock: threading.Lock,
-                pins_left, pins_right,
-                pid_left, pid_right,
+                motor_left, motor_right,
+                pid_motor_speed_left, pid_motor_speed_right,
                 pid_angle,
-                theta_ref,
+                theta_target,
+                control_mode: int,
                 pwm_bais_left=20, pwm_bais_right=20,
-                wheel_base_width=0.10,
+                wheels_base_distance=0.10,
                 active_pid=False,
-                velocity=0.5, no_pid_speed=50):
+                base_velocity=50, no_pid_pwm_dutycycle_value=50):
+        """
+        :param theta_target: the angle to maintant aound the é-axis
+        :param control_mode: defines how the rover is controlled. We do have
+        the manual and the autonous
+        :param wheels_base_distance: the distance that separate the left wheel
+        and the right wheel
+        """
+        
+        
         self.shared_state = shared_state
         self.imu = imu
         self.imu_sensor_thread_lock = imu_sensor_thread_lock
         self.odo = odo
+        self.wheels_base_distance = wheels_base_distance
         
-        # pins_left = {'pwm': 12, 'dir': 24}
-        self.motor_l = RMotor(pins_left['pwm'], pins_left['in1_pin'], pins_left['in2_pin'])
-        self.motor_r = RMotor(pins_right['pwm'], pins_right['in1_pin'], pins_right['in2_pin'])
+        ######################################
+        # Control mode
+        self.control_mode = control_mode
         
+        ###################################
+        # Motors
         self.active_pid = active_pid
         
-        # In void to have 0.3m/s
-        #self.pid_l = PIDController(10.0, 1.9, 0.1)
-        #self.pid_r = PIDController(10.0, 1.9, 0.0)
-        if pid_left is not None and pid_right is not None:
-            self.pid_l = PIDController("Left", pid_left["P"], pid_left["I"], pid_left["D"], error_min=1, reset_integral=False)
-            self.pid_r = PIDController("Right", pid_right["P"], pid_right["I"], pid_right["D"], error_min=1, reset_integral=False)
-            
+        self.motor_l = RMotor(
+            pwm_pin=motor_left['pwm_pin'], in1_pin=motor_left['in1_pin'], in2_pin=motor_left['in2_pin'],
+            max_power=motor_left['max_power'], pwm=motor_left['pwm']
+        )
+        self.motor_r = RMotor(
+            pwm_pin=motor_right['pwm_pin'], in1_pin=motor_right['in1_pin'], in2_pin=motor_right['in2_pin'],
+            max_power=motor_right['max_power'], pwm=motor_right['pwm']
+        )
         
+        
+        if pid_motor_speed_left is not None and pid_motor_speed_right is not None:
+            self.pid_speed_l = PIDController("Left", pid_motor_speed_left["P"], pid_motor_speed_left["I"], pid_motor_speed_left["D"], error_min=1, reset_integral=False)
+            self.pid_speed_r = PIDController("Right", pid_motor_speed_right["P"], pid_motor_speed_right["I"], pid_motor_speed_right["D"], error_min=1, reset_integral=False)
+            
+        ######################################
+        # Straight line
+        # Angle
         self.pid_angle = PIDController("Angle", pid_angle["P"], pid_angle["I"], pid_angle["D"], error_min=1, reset_integral=True)
         self.yaw_estimator = RoverYawEstimator()
-        self.theta_ref = theta_ref
+        self.theta_target = theta_target
         self.command_theta = 0.0
         
-        self.velocity = velocity
-        self.no_pid_speed = no_pid_speed
-        self.target_v_l = self.velocity
-        self.target_v_r = self.velocity
+        ######################################
+        # Speed
+        # Velocity parameters
+        """
+        The bse velocy that wheels must maintain during running.
+        It's expressed in RPM
+        """
+        self.base_velocity = base_velocity
+        self.no_pid_pwm_dutycycle_value = no_pid_pwm_dutycycle_value
+        self.target_v_l = self.base_velocity
+        self.target_v_r = self.base_velocity
         self.command_v_l = 0.0
         self.command_v_r = 0.0
         self.pwm_l = 0.0
         self.pwm_r = 0.0
         self.pwm_bais_l = pwm_bais_left
         self.pwm_bais_r = pwm_bais_right
-        self.pid_last_compute_time = None
+        
+        
+        ############################################""
+        # Command Section
         self.last_command = None
         self._stopped = False
-        self.update_cycle_counter = 0
         
         # The command locker, no command has been locked
         self.target_v_lock =  {
@@ -118,45 +154,35 @@ class Rover:
         }
         self.stop_command = {"x": 0, "y": 0, "a": "stop"}
         
-        self.wheel_base_width = wheel_base_width
         
+        # Other conrols
         if not self.active_pid:
             logging.warning("[Robot Thread] Not active PID")
+            
+    def set_theta_target(self, theta):
+        """
+        Set a new value as the theta target
+        
+        :param theta: the new target value
+        """
+        self.theta_target = theta
+        
 
     @property        
     def target_linear(self):
         return (self.target_v_l + self.target_v_r )/2
 
     def move(self, linear, angular=0):
-        """Set target velocity (m/s et rad/s)"""
+        """Set target base_velocity (m/s et rad/s)"""
         
-        linear = max(min(linear, self.velocity), -self.velocity)
+        linear = max(min(linear, self.base_velocity), -self.base_velocity)
         
-        self.target_v_l = (linear * 1) - (angular * self.wheel_base_width / 2)
-        self.target_v_r = (linear * 1) + (angular * self.wheel_base_width / 2)
+        self.target_v_l = (linear * 1) - (angular * self.wheels_base_distance / 2)
+        self.target_v_r = (linear * 1) + (angular * self.wheels_base_distance / 2)
         
-    def move_right(self, speed=0.5):
-        """Tourne sur place vers la droite"""
-        # Vitesse linéaire nulle, rotation négative
-        self.move(0, -speed)
-    
-    def move_left(self, speed=0.5):
-        """Tourne sur place vers la gauche"""
-        # Vitesse linéaire nulle, rotation positive
-        self.move(0, speed)
-    
-    def move_front(self, speed=0.3):
-        """Avance tout droit"""
-        # Vitesse linéaire positive, rotation nulle
-        self.move(speed, 0)
-    
-    def move_back(self, speed=0.3):
-        """Recule tout droit"""
-        # Vitesse linéaire négative, rotation nulle
-        self.move(-speed, 0)
         
     def move_break(self):
-        """Arrêt d'urgence immédiat"""
+        """Immediate stop"""
         self.move(0, 0)
         # On force les PWM à 0 pour couper le couple moteur
         self.motor_l.set_speed(0)
@@ -195,21 +221,9 @@ class Rover:
         if self.last_command is None:
             return
         
-        # For the moment no need to reset the velocity
-        #self.target_v_l = 0.01 * sign(self.target_v_l)
-        #self.target_v_r = 0.01 * sign(self.target_v_r)
-        
-        
-        
-        # And we reset the error integral to avoid saturation
-        # when we will restart the robot
-        # [NOTE] By exprience no need to turn down the pid unless stopped
-        #self.pid_l.interrupt()
-        #self.pid_r.interrupt()
-        
         self.odo.left_wheel.reset()
         self.odo.right_wheel.reset()
-        #self.yaw_estimator.reset()
+        self.yaw_estimator.reset()
         
         # We block any further change for a number of cycle
         self.target_v_lock =  {
@@ -230,45 +244,27 @@ class Rover:
         Apply the modification provoked by the new command
         that we have stored
         """
-        if cmd["x"] == 1:
-            self.target_v_l = abs(self.velocity)
-            self.target_v_r = -abs(self.velocity)
-            self._stopped = False
-        elif cmd["x"] == -1:
-            self.target_v_l = -abs(self.velocity)
-            self.target_v_r = abs(self.velocity)
-            self._stopped = False
-        if cmd["y"] == 1:
-            self.target_v_l = abs(self.velocity)
-            self.target_v_r = abs(self.velocity)
-            self._stopped = False
-        elif cmd["y"] == -1:
-            self.target_v_l = -abs(self.velocity)
-            self.target_v_r = -abs(self.velocity)
-            self._stopped = False
-        elif cmd.get("a") == "stop":
+        
+        if cmd.get("a") == "stop":
             self.target_v_l = 0
             self.target_v_r = 0
             
             # And we reset the error integral to avoid saturation
             # when we will restart the robot
-            self.pid_l.interrupt()
-            self.pid_r.interrupt()
+            self.pid_speed_l.interrupt()
+            self.pid_speed_r.interrupt()
             self.pid_angle.interrupt()
             
             self.move_break()
-            print("Stopped")
-            
-        
-        print(f"\n\n\n Stopped: {self._stopped}")
+            logging.info("Stop command received")
+        else:
+            self._stopped = False
             
         self.last_command = cmd
         
-        
-        
     def update(self, dt):
         """
-        Boucle de contrôle appelée par le RobotController
+        Main loop
         """        
         if self.last_command is None:
             print("No Command Yet received")
@@ -282,18 +278,26 @@ class Rover:
             self.move_break()
             return
         
-        # 1. Obtenir les vitesses réelles via odométrie
-        movement = self.odo.get_movement()
-        dist_l = movement["left"]["dist"]
-        dist_r = movement["right"]["dist"]
-        #print("Dist_l", dist_l)
-        #print("Dist_r", dist_r)
+        if not self.active_pid:
+            # Apply the same base_velocity
+            self.motor_l.set_speed(self.no_pid_pwm_dutycycle_value)
+            self.motor_r.set_speed(self.no_pid_pwm_dutycycle_value)
+            return
         
-         # 0. On estime l'angle de rotation sur l'axe z
+        ##
+        #  START DYNAMIC MOVE
+        ##
+        
+        
+        ############################################
+        # THETA
+        #
+        # Read the theta angle from the IMU SENSORS
         imu_data = None
         with self.imu_sensor_thread_lock:
              imu_data = self.imu.get_data()
         
+        # TODO: Reactivate this later
         #theta = self.yaw_estimator.update(
         #     gyro_z=imu_data[1]["z"],
         #     d_left=dist_l, d_right=dist_r,
@@ -304,92 +308,83 @@ class Rover:
         theta = imu_data[2]
         self.command_theta = theta
         
+        theta_error = wrap_angle(self.theta_target - theta, deg=True)
         
-        if self.last_command["y"] in [-1, 1]:
-            theta_error = wrap_angle(self.theta_ref - theta, deg=True)
-        else:
-            theta_error = 0.0
-        
-        # We convert the error into degree in order to have
-        # a margin when applying the PID Kp on the error
-            
-        #print("Theta: ", np.rad2deg(theta))
-        omega = self.pid_angle.compute(self.theta_ref, theta, theta_error)
+        omega = self.pid_angle.compute(self.theta_target, theta, theta_error)
         print("Error theta: ", theta_error)
         print("Angle Omega: ", omega)
-        omega = clamp(omega, -int(self.velocity * 0.2), int(self.velocity * 0.2))
+        omega = clamp(omega, -int(self.base_velocity * 0.4), int(self.base_velocity * 0.4))
         print("Angle Omega Clamped: ", omega)
         
-        # Récupérer les vitesse avec l'odométrie
-        self.command_v_l = movement["left"]["v"] #dist_l / dt
-        self.command_v_r = movement["right"]["v"] #dist_r / dt
+        ############################################
+        # Odometry
+        #
+        movement = self.odo.get_movement()
+        dist_l = movement["left"]["dist"]
+        dist_r = movement["right"]["dist"]
         
-        # Mettre à jour les commande avec la vitesse angulaireS
-        if self.last_command["y"] in [-1, 1]:
-            # Because of the direction we choosesd on our board
-            # normally in the right position as designed for the rover
-            # left decrese and right increase
-            self.target_v_l = self.velocity - omega
-            self.target_v_r = self.velocity + omega
+        self.command_v_l = movement["left"]["v"]
+        self.command_v_r = movement["right"]["v"]
+        
+        # Update the target velocity
+        if self.last_command["y"] == 1:
+            self.target_v_l = self.base_velocity - omega
+            self.target_v_r = self.base_velocity + omega
+        elif self.last_command["y"] == -1:
+            # Sign are inversed here because we are running backward
+            self.target_v_l = self.base_velocity + omega
+            self.target_v_r = self.base_velocity - omega
         else:
+            pass 
+        
+        # Clamp base_Velocity
+        # Important
+        if abs(self.target_v_l - self.command_v_l > 1.5*self.base_velocity) or abs(self.target_v_r - self.command_v_l) > 1.5*self.base_velocity:
             pass
         
-        # TODO: Check if command remains zero for at least 1s, if so reset the pid
-        # TODO Check if the diff between the both velocity is similar duringt N Cycle
-        # If not sililar, reset the motor to not move until we got a similar velocity
+        #############################"
+        # Motor PID 
+        #
+        # out the pwm dutycycle 
+        self.pwm_l = self.pid_speed_l.compute(abs(self.target_v_l), self.command_v_l)
+        self.pwm_r = self.pid_speed_r.compute(abs(self.target_v_r), self.command_v_r)
         
-        if not self.active_pid:
-            # Apply the same velocity
-            self.motor_l.set_speed(self.no_pid_speed)
-            self.motor_r.set_speed(self.no_pid_speed)
-            return 
-
-        if self._stopped:
-            self.move_break()
-            return
-        
-        # We compute PID here
-        # 2. Calculer le PWM via PID
-        #print(f"Targets: l={self.target_v_l} r={self.target_v_r}")
-        #print(f"Command: l={self.command_v_l} r={self.command_v_r}")
-        
-        # Clamp Velocity
-        # Important
-        if abs(self.target_v_l - self.command_v_l > 1.5*self.velocity) or abs(self.target_v_r - self.command_v_l) > 1.5*self.velocity:
-            #self.change_direction(self.stop_command)
-            #time.sleep(1)
-            #self.change_direction(self.last_command)
-            print("Bobo")
-            
-            #return
-        
-        # Have to pass the absolute value of the target sign
-        # since we can have negative value for velocity
-        # and pid are optimized only for posiitive
-        # The pwm will translate.
-        # That why we have impose a tampred period to slow down to zero
-        self.pwm_l = self.pid_l.compute(abs(self.target_v_l), self.command_v_l)
-        self.pwm_r = self.pid_r.compute(abs(self.target_v_r), self.command_v_r)
-        
-        # 3. Compute the difference in velocity
-        dv = self.command_v_l - self.command_v_r
+        # Velocity asjustment value, currently not needed
+        # TODO: Remove it
         Kpwm = 0
-        #print(f"dv={dv}, Kpwm={Kpwm}")
         
         self.pwm_l += self.pwm_bais_l - Kpwm
         self.pwm_r += self.pwm_bais_r + Kpwm
         
         
-        self.motor_l.set_speed(self.pwm_l * sign(self.target_v_l))
-        self.motor_r.set_speed(self.pwm_r * sign(self.target_v_r))
+        # Apply the the pid out value depending on the command direction
+        # we have received
+        if self.last_command["x"] == 1:
+            # Stay in place and rotate to left
+            self.pwm_l = self.pwm_l * (-1)
+        elif self.last_command["x"] == -1:
+            # Stay in place and rotate to the right
+            self.pwm_r = self.pwm_r * (-1)
+        if self.last_command["y"] == 1:
+            # Moving forward the default action
+            pass
+        elif self.last_command["y"] == -1:
+            # Move backward
+           self.pwm_l = self.pwm_l * (-1)
+           self.pwm_r = self.pwm_r * (-1)
         
+        self.motor_l.set_speed(self.pwm_l)
+        self.motor_r.set_speed(self.pwm_r)
+        
+        #############################
+        # Command changing tampering
+        #
         # In case we have a target velock lock, we decrement and check if 
         # the required number of cycle has passed in order to execute
         # the holded command
         if self.target_v_lock["active"] == True:
             if self.target_v_lock["n_cycles"] > 0:
                 self.target_v_lock["n_cycles"] = self.target_v_lock["n_cycles"] - 1
-                #print("\n\nTarget Cycle remaining:", self.target_v_lock["n_cycles"], "\n\n\n")
             
                 if self.target_v_lock["n_cycles"] == 0:
                     self.target_v_lock["active"] = False
@@ -436,13 +431,13 @@ class RoverThread(threading.Thread):
             "wr_c": self.rover.command_v_r * sign(self.rover.target_v_r),
             "wl_p": abs(self.rover.pwm_l),
             "wr_p": abs(self.rover.pwm_r),
-            "wr_pid_e": self.rover.pid_r.prev_error,
-            "wr_pid_i": self.rover.pid_r.integral,
-            "wr_pid_d": self.rover.pid_r.prev_derivative,
-            "wl_pid_e": self.rover.pid_l.prev_error,
-            "wl_pid_i": self.rover.pid_l.integral,
-            "wl_pid_d": self.rover.pid_l.prev_derivative,
-            "th_t": self.rover.theta_ref,
+            "wr_pid_e": self.rover.pid_speed_r.prev_error,
+            "wr_pid_i": self.rover.pid_speed_r.integral,
+            "wr_pid_d": self.rover.pid_speed_r.prev_derivative,
+            "wl_pid_e": self.rover.pid_speed_l.prev_error,
+            "wl_pid_i": self.rover.pid_speed_l.integral,
+            "wl_pid_d": self.rover.pid_speed_l.prev_derivative,
+            "th_t": self.rover.theta_target,
             "th_c": self.rover.command_theta,
             "th_pid_e": self.rover.pid_angle.prev_error,
             "th_pid_i": self.rover.pid_angle.integral,

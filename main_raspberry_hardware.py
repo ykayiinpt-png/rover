@@ -6,7 +6,7 @@ faulthandler.enable()
 from src.raspberry.config import Config
 from src.raspberry.hardware.rover import Rover
 from src.raspberry.hardware.rover.odometry import WheelOdometry
-from src.raspberry.imu_ekf_controller import ImuEkfController
+from src.raspberry.mapping.imu_ekf_controller import ImuEkfController
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,16 +84,47 @@ def main():
     
     sonar_array=UltrasoundSensorArray(
         [
-            {'name': 'Back',  "key": "u_b", 'trig': 16, 'echo': 19},
-            {'name': 'Front', "key": "u_f", 'trig': 20, 'echo': 21},
-            {'name': 'Right', "key": "u_r", 'trig': 26, 'echo': 7}, # NOTE: Have to disable SPI in order to add interruption to the pin 7 an SPI PIN
-            {'name': 'Left',  "key": "u_l", 'trig': 5, 'echo': 6}
+            {
+                'name': cfg.ultra_sounds.back.name,  "key": cfg.ultra_sounds.back.key,
+                'trig': cfg.ultra_sounds.back.gpio.trig, 'echo': cfg.ultra_sounds.back.gpio.echo
+            },
+            {
+                'name': cfg.ultra_sounds.front.name,  "key": cfg.ultra_sounds.front.key,
+                'trig': cfg.ultra_sounds.front.gpio.trig, 'echo': cfg.ultra_sounds.front.gpio.echo
+            },
+            {
+                'name': cfg.ultra_sounds.left.name,  "key": cfg.ultra_sounds.left.key,
+                'trig': cfg.ultra_sounds.left.gpio.trig, 'echo': cfg.ultra_sounds.left.gpio.echo
+            },
+            {
+                'name': cfg.ultra_sounds.right.name,  "key": cfg.ultra_sounds.right.key,
+                'trig': cfg.ultra_sounds.right.gpio.trig, 'echo': cfg.ultra_sounds.right.gpio.echo
+            },
+            #{'name': 'Front', "key": "u_f", 'trig': 20, 'echo': 21},
+            #{'name': 'Right', "key": "u_r", 'trig': 26, 'echo': 7}, # NOTE: Have to disable SPI in order to add interruption to the pin 7 an SPI PIN
+            #{'name': 'Left',  "key": "u_l", 'trig': 5, 'echo': 6}
         ]
     )
     
     odometry = WheelOdometry(
-        left_pin=10, right_pin=9,
-        tpr=20, diameter=0.065 # 6.5cm
+        left_params={
+            "name": cfg.rover.odometry.left_wheel.name,
+            "pin": cfg.rover.odometry.left_wheel.gpio.pin, 
+            "ticks_per_rev": cfg.rover.odometry.left_wheel.ticks_per_rev,
+            "wheel_diameter":cfg.rover.odometry.left_wheel.wheel_diameter,
+            "min_ticks_delta": cfg.rover.odometry.left_wheel.min_ticks_delta,
+            "lpf_1_alpha": cfg.rover.odometry.left_wheel.lpf_1_alpha,
+            "window_filter_size": cfg.rover.odometry.left_wheel.window_filter_size
+        },
+        right_params={
+            "name": cfg.rover.odometry.right_wheel.name,
+            "pin": cfg.rover.odometry.right_wheel.gpio.pin, 
+            "ticks_per_rev": cfg.rover.odometry.right_wheel.ticks_per_rev,
+            "wheel_diameter":cfg.rover.odometry.right_wheel.wheel_diameter,
+            "min_ticks_delta": cfg.rover.odometry.right_wheel.min_ticks_delta,
+            "lpf_1_alpha": cfg.rover.odometry.right_wheel.lpf_1_alpha,
+            "window_filter_size": cfg.rover.odometry.right_wheel.window_filter_size
+        }
     )
     
     imu_sensor = IMUSensor(
@@ -104,46 +135,55 @@ def main():
     imu_sensor.calibrate()
     
     rover = Rover(
-        velocity=cfg.rover.velocity,
+        control_mode=Rover.MODE_MANUAL_NAVIGATION,
+        base_velocity=cfg.rover.velocity,
         shared_state=rover_shared_state,
         odo= odometry,
+        
         imu=imu_sensor,
         imu_sensor_thread_lock=imu_sensor_thread_lock,
-        pins_right={
-            "pwm": cfg.rover.motor.gpio.right.pwm ,
-            "in1_pin": cfg.rover.motor.gpio.right.in1,
-            "in2_pin": cfg.rover.motor.gpio.right.in2
+        
+        motor_right={
+            "pwm_pin": cfg.rover.motor_right.gpio.pwm ,
+            "in1_pin": cfg.rover.motor_right.gpio.in1,
+            "in2_pin": cfg.rover.motor_right.gpio.in2,
+            "max_power":  cfg.rover.motor_right.max_power,
+            "pwm":  cfg.rover.motor_right.pwm
         },
-        pins_left={
-            "pwm": cfg.rover.motor.gpio.left.pwm ,
-            "in1_pin": cfg.rover.motor.gpio.left.in1,
-            "in2_pin": cfg.rover.motor.gpio.left.in2
+        motor_left={
+            "pwm_pin": cfg.rover.motor_left.gpio.pwm ,
+            "in1_pin": cfg.rover.motor_left.gpio.in1,
+            "in2_pin": cfg.rover.motor_left.gpio.in2,
+            "max_power":  cfg.rover.motor_left.max_power,
+            "pwm":  cfg.rover.motor_left.pwm
         },
-        pid_right={
-            "P": cfg.rover.motor.pid.right.kp,
-            "I": cfg.rover.motor.pid.right.ki,
-            "D": cfg.rover.motor.pid.right.kd
+        
+        pid_motor_speed_right={
+            "P": cfg.rover.motor_right.pid.kp,
+            "I": cfg.rover.motor_right.pid.ki,
+            "D": cfg.rover.motor_right.pid.kd
         },
-        pid_left={
-            "P": cfg.rover.motor.pid.left.kp,
-            "I": cfg.rover.motor.pid.left.ki,
-            "D": cfg.rover.motor.pid.left.kd
+        pid_motor_speed_left={
+            "P": cfg.rover.motor_left.pid.kp,
+            "I": cfg.rover.motor_left.pid.ki,
+            "D": cfg.rover.motor_left.pid.kd
         },
         pid_angle={
             "P": cfg.rover.angle.straight.pid.kp,
             "I": cfg.rover.angle.straight.pid.ki,
             "D": cfg.rover.angle.straight.pid.kd
         },
-        theta_ref=cfg.rover.angle.straight.ref,
-        pwm_bais_left=cfg.rover.motor.pwm.bais.left,
-        pwm_bais_right=cfg.rover.motor.pwm.bais.right,
         
-        wheel_base_width=cfg.rover.odometry.wheel_base_width,
+        theta_target=cfg.rover.angle.straight.ref,
+        pwm_bais_left=cfg.rover.motor_left.duty_cycle.bais,
+        pwm_bais_right=cfg.rover.motor_right.duty_cycle.bais,
+        
+        wheels_base_distance=cfg.rover.odometry.wheels_base_distance,
         active_pid=cfg.rover.enable_pid
     )
     
     
-    robot_ctrl = ImuEkfController(
+    raspberry_pi_instance = RaspberryPi(
         rover=rover,
         sonars_arr_obj=sonar_array,
         imu=imu_sensor,
@@ -155,7 +195,7 @@ def main():
         commands_receive_queue=commands_receive_queue,
         map_data_send_queue=map_data_send_queue,
     )
-    print(robot_ctrl)
+    print(raspberry_pi_instance)
     
 
     try:
@@ -165,15 +205,17 @@ def main():
         
         logging.info("[Main] Main process running. Press Ctrl+C to stop.")
 
-        robot_ctrl.run()
+        raspberry_pi_instance.run()
     except KeyboardInterrupt:
         logging.info("[Main] KeyboardInterrupt received. Shutting down...")
-        robot_ctrl.stop()
     except Exception as e:
         logging.exception("Exception occured While starting raspberry PI4")
         raise e
     finally:
-        logging.info("[RaspbarryPi] In finally")
+        logging.info("[Main] In finally")
+        
+        # Stop the rapberry PI
+        raspberry_pi_instance.stop()
         
         map_data_send_queue.close()
         ultrasound_data_sent_queue.close()

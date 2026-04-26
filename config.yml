@@ -1,49 +1,134 @@
+# python -X faultenable main_raspberry_hardware.py
 mqtt:
     host: 192.168.137.1
     port: 1883
+
 features: 
-    - video
+    #- video
     - "data"
     #- commands
     #- none
+
+###########################################
+# Sensors
+###########################################
+imu:
+    freq: 200 # 200Hz
+    gyro:
+        z:
+            offset: 0
+
+ultra_sounds:
+    freq: 0
+    back:
+        name: "Back"
+        key: "u_b"
+        gpio:
+            trig: 16
+            echo: 19
+    front:
+        name: "Front"
+        key: "u_f"
+        gpio:
+            trig: 20
+            echo: 21
+    right:
+        name: "Right"
+        key: "u_r"
+        gpio:
+            trig: 26
+            echo: 7 #"Have to disable SPI in order to add interruption to pin 7 (SPI pin)"
+    left:
+        name: "Left"
+        key: "u_l"
+        gpio:
+            trig: 5
+            echo: 6
+
+###########################################
+# Vehicle
+###########################################
 rover:
-    velocity: 200 #147 # 147 RPM = 0.5 m/s
+    freq: 20 # 20 Hz
+    velocity: 120 #147 # 147 RPM = 0.5 m/s
     enable_pid: true
     odometry:
-        wheel_base_width: 0.10 # m, 10cm --> 0.10 cm
+        wheels_base_distance: 0.10 # m, 10cm --> 0.10 m
+        left_wheel:
+            name: "Left"
+            gpio:
+                pin: 10
+            ticks_per_rev: 20
+            wheel_diameter: 0.065 # 0.065m -> 6.5cm
+            min_ticks_delta: 2
+            lpf_1_alpha: 0.8
+            window_filter_size: 2
+        right_wheel:
+            name: "Right"
+            gpio:
+                pin: 9
+            ticks_per_rev: 20
+            wheel_diameter: 0.065 # 0.065m -> 6.5cm
+            min_ticks_delta: 2
+            lpf_1_alpha: 0.8
+            window_filter_size: 2
+    angle:
+        straight:
+            # the width line orientation in compraison to the IMU axis
+            ref: 0.0
+            pid:
+                kp: 0.5
+                ki: 0.0
+                kd: 0.0
+    motor_left:
+        pwm: 100 # 100 Hz
+        max_power: 70
+        duty_cycle:
+            bais: 10
         gpio:
-            left: 10
-            right: 9
-    motor:
-        gpio:
-            left:
-                in1: 22
-                in2: 23
-                pwm: 13
-            right:
-                in1: 17
-                in2: 27
-                pwm: 12
+            in1: 22
+            in2: 23
+            pwm: 13
         pid:
-            left:
-                #kp: 0
-                #ki: 0
-                #kd: 0
-                kp: 0.1
-                ki: 0.01
-                kd: 0.0
-                #kp: 4.1
-                #ki: 0.9
-                #kd: 0
-            right:
-                #kp: 29
-                #ki: 0.0 #0.1
-                #kd: 0
-                kp: 0.1
-                ki: 0.01
-                kd: 0.0
-        pwm:
-            bais:
-                left: 0
-                right: 0
-    
+            #kp: 0
+            #ki: 0
+            #kd: 0
+            #kp: 0.11
+            #ki: 0.01
+            #kd: 0.01
+            kp: 0.1
+            ki: 0.0
+            kd: 0.0
+            #kp: 4.1
+            #ki: 0.9
+            #kd: 0
+    motor_right:
+        pwm: 100 # 100 Hz
+        max_power: 70
+        duty_cycle:
+            bais: 12
+        gpio:
+            in1: 17
+            in2: 27
+            pwm: 12
+        pid:
+            #kp: 29
+            #ki: 0.0 #0.1
+            #kd: 0
+            #kp: 0.11
+            #ki: 0.01
+            #kd: 0.01
+            kp: 0.15
+            ki: 0.0
+            kd: 0.0
+            #kp: 0.0
+            #ki: 0.0
+            #kd: 0
+
+###########################################
+# Mapping
+###########################################
+
+###########################################
+# Autonomous navigation
+###########################################
