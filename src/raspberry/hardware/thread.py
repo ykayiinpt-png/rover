@@ -65,65 +65,74 @@ class UltrasoundThread(threading.Thread):
         
         
 class IMUThread(threading.Thread):
-    def __init__(self, sensor_hw: IMUSensor, imu_data_send_queue: multiprocessing.Queue, *args, **kwargs):
+    def __init__(self, sensor_hw: IMUSensor, imu_data_send_queue: multiprocessing.Queue,
+                lock: threading.Lock, f=200,
+                *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.sensor = sensor_hw
-        self.stop_event = threading.Event()
-        
-        self.imu_data_send_queue = imu_data_send_queue
-        
         self.daemon = True
         
-        # Données partagées
-        self.yaw = 0.0
-        self.accel_x = 0.0
-        self.gyro_z = 0.0
-        self.lock = threading.Lock()
+        # Self attributes
+        self.f = 200
+        self.sensor = sensor_hw
+        self.stop_event = threading.Event()
+        self.imu_data_send_queue = imu_data_send_queue
+        
+        self.lock = lock
         
         self.buffer = []
         self.buffer_size = 20
+        
+    def handle_batch(self, data):
+        self.buffer.append(data)
+
+        if len(self.buffer) == self.buffer_size:
+            current_timestamp = datetime.now(timezone.utc).timestamp()
+            q_data = {
+                "topic": "slam/sensors/data/imu",
+                "payload": {
+                    "time": current_timestamp,
+                    "batch_dt": { "ax": 0.1, "rot": 0.1 },
+                    # Ultrasound
+                    # 2 -> yaw
+                    "theta": [m[2] for m in self.buffer],
+                    # 1 -> gyrao data
+                    "g_z": [m[1]['z'] for m in self.buffer],
+                }
+            }
+            
+            # Clear the buffer
+            self.buffer.clear()
+            
+            try:
+                self.imu_data_send_queue.put_nowait(q_data)
+            except Exception:
+                logging.exception("Error Sending Imu data to rEMOTE")
 
     def run(self):
-        #print("Run ImuThread")
-        while not self.stop_event.is_set():       
-            # Mise à jour des données brutes et calcul du Yaw
-            self.sensor.update() 
-            data = self.sensor.get_data()
-            
-            self.buffer.append(data)
-            
-            if len(self.buffer) == self.buffer_size:
-                current_timestamp = datetime.now(timezone.utc).timestamp()
-                q_data = {
-                    "topic": "slam/sensors/data/imu",
-                    "payload": {
-                        "time": current_timestamp,
-                        "batch_dt": { "ax": 0.01, "rot": 0.01 },
-                        # Ultrasound
-                        "rot": [m['yaw'] for m in self.buffer],
-                        "g_z": [m['gyro']['z'] for m in self.buffer],
-                    }
-                }
-                
-                # Clear the buffer
-                self.buffer = []
-                
-                self.imu_data_send_queue.put(q_data)
-                
-                #print("\n\n\ IMU Data sent")
-                #print(q_data)
+        
+        
+        delta_t = 1/self.f
+        
+        last_time = time.perf_counter()
+        last_handle_batch_time = time.perf_counter()
+        
+        while not self.stop_event.is_set():
+            now = time.perf_counter()
+            dt = now - last_time
+            last_time = now
             
             with self.lock:
-                self.accel_x = data['accel']['y']
-                self.gyro_z = data['gyro']['z']
-                self.yaw = data['yaw']
+                # The Imu class has an internal delta_t compute to integrate
+                # angle
+                self.sensor.update() 
             
-            # On fait tourner l'IMU à 100Hz (très stable)
-            time.sleep(0.01)
+                # Handle Batch data
+                if now - last_handle_batch_time > 0.05:
+                    self.handle_batch(self.sensor.get_data())
+                    last_handle_batch_time = now
+            
 
-    def get_latest_data(self):
-        with self.lock:
-            return self.accel_x, self.gyro_z, self.yaw
+            time.sleep(delta_t)
         
     def shutdown(self):
         self.stop_event.set()

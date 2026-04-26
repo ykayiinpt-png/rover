@@ -28,7 +28,7 @@ class RMotor:
         """
         
         #self.pwm.ChangeDutyCycle(40)
-        print(f"Motor {self.pwm_pin} has changed duty cyle to: {power}")
+        #print(f"Motor {self.pwm_pin} has changed duty cyle to: {power}")
         
         if self._dir != sign(power):
             self.pwm.ChangeDutyCycle(0)
@@ -49,7 +49,7 @@ class RMotor:
             
         # Limitation de sécurité
         duty_cycle = max(0, min(float(duty_cycle), 99))
-        print(f"Setting duty cylce: {self.pwm_pin}", duty_cycle)
+        #print(f"Setting duty cylce: {self.pwm_pin}", duty_cycle)
         self.pwm.ChangeDutyCycle(duty_cycle)
 
     def stop(self):

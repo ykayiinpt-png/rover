@@ -1,5 +1,6 @@
 import logging
 import multiprocessing
+import threading
 import time
 import numpy as np
 
@@ -10,7 +11,8 @@ from src.raspberry.hardware.sensors.ultrasound import UltrasoundSensorArray
 from src.raspberry.hardware.thread import IMUThread, UltrasoundThread
 
 class ImuEkfController:
-    def __init__(self, rover: Rover, sonars_arr_obj: UltrasoundSensorArray, imu: IMUSensor,
+    def __init__(self, rover: Rover, sonars_arr_obj: UltrasoundSensorArray,
+                imu: IMUSensor, imu_sensor_thread_lock: threading.Lock,
                 ultrasound_data_sent_queue: multiprocessing.Queue,
                 imu_data_send_queue: multiprocessing.Queue,
                 odometry_data_sent_queue: multiprocessing.Queue,
@@ -38,6 +40,7 @@ class ImuEkfController:
         
         self.imu_thread = IMUThread(
             sensor_hw=imu,
+            lock=imu_sensor_thread_lock,
             imu_data_send_queue=imu_data_send_queue
         )
         
@@ -75,7 +78,9 @@ class ImuEkfController:
             while self.running:
                 now = time.perf_counter()
                 loop_dt = now - last_time
+                continue
 
+                # TODO: review all the block here
                 if loop_dt >= self.dt_kalman:
                     # --- A. ACQUISITION DES DONNÉES FILTRÉES ---
                     imu_data = self.imu_thread.get_latest_data()

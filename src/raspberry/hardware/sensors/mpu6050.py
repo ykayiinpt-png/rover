@@ -261,7 +261,7 @@ class MPU6050:
         gyro = self.get_gyro_data()
         return [accel, gyro, temp]
 
-
+"""
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -277,3 +277,4 @@ if __name__ == "__main__":
     print(gyro_data[0])
     print(gyro_data[1])
     print(gyro_data[2])
+"""

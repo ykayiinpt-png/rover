@@ -1,5 +1,6 @@
 import logging
 import faulthandler
+import threading
 faulthandler.enable()
 
 from src.raspberry.config import Config
@@ -95,10 +96,19 @@ def main():
         tpr=20, diameter=0.065 # 6.5cm
     )
     
+    imu_sensor = IMUSensor(
+        name="IMU_Sensor"
+    )
+    imu_sensor_thread_lock = threading.Lock()
+    
+    imu_sensor.calibrate()
+    
     rover = Rover(
         velocity=cfg.rover.velocity,
         shared_state=rover_shared_state,
         odo= odometry,
+        imu=imu_sensor,
+        imu_sensor_thread_lock=imu_sensor_thread_lock,
         pins_right={
             "pwm": cfg.rover.motor.gpio.right.pwm ,
             "in1_pin": cfg.rover.motor.gpio.right.in1,
@@ -119,6 +129,12 @@ def main():
             "I": cfg.rover.motor.pid.left.ki,
             "D": cfg.rover.motor.pid.left.kd
         },
+        pid_angle={
+            "P": cfg.rover.angle.straight.pid.kp,
+            "I": cfg.rover.angle.straight.pid.ki,
+            "D": cfg.rover.angle.straight.pid.kd
+        },
+        theta_ref=cfg.rover.angle.straight.ref,
         pwm_bais_left=cfg.rover.motor.pwm.bais.left,
         pwm_bais_right=cfg.rover.motor.pwm.bais.right,
         
@@ -126,11 +142,12 @@ def main():
         active_pid=cfg.rover.enable_pid
     )
     
+    
     robot_ctrl = ImuEkfController(
         rover=rover,
         sonars_arr_obj=sonar_array,
-        imu=IMUSensor(name="i"),
-        
+        imu=imu_sensor,
+        imu_sensor_thread_lock=imu_sensor_thread_lock,
         ultrasound_data_sent_queue=ultrasound_data_sent_queue,
         imu_data_send_queue=imu_data_send_queue,
         odometry_data_sent_queue=odometry_data_sent_queue,

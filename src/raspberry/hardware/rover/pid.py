@@ -4,7 +4,7 @@ from src.core.utils import clamp, sign
 
 
 class PIDController:
-    def __init__(self, name, kp, ki, kd):
+    def __init__(self, name, kp, ki, kd, error_min, reset_integral=False):
         self.kp, self.ki, self.kd = kp, ki, kd
         self.prev_error = 0
         self.integral = 0
@@ -12,9 +12,11 @@ class PIDController:
         self.last_time = time.perf_counter()
         self.name = name
         self.out_filtered = 0
-        self.out_smoothing_alpha = 0.9
+        self.out_smoothing_alpha = 0.0
         self.derivative_filtered = 0
-        self.derivative_smoothing_alpha = 0.9999
+        self.derivative_smoothing_alpha = 0.9
+        self.error_min = error_min
+        self.reset_integral = reset_integral
         
     def interrupt(self):
         self.integral = 0
@@ -22,19 +24,20 @@ class PIDController:
         self.derivative_filtered = 0
         self.out_filtered = 0
 
-    def compute(self, target_speed, current_speed):
+    def compute(self, target, current, error=None):
         now = time.perf_counter()
         dt = now - self.last_time
         if dt <= 0: return 0
         
-        error = target_speed - current_speed
-        if abs(error) < 2: # Wind down the error
+        if error is None:
+            error = target - current
+        
+        if abs(error) < self.error_min: # Wind down the error
             error = 0
+            if self.reset_integral:
+                self.integral = self.integral * 0.5
             
-        if abs(error) >= 100:
-            pass #error = 100 * sign(error)
-            
-        print(f"PID {self.name} target_speed diff: ", error, " Target", target_speed)
+        #print(f"PID {self.name} target diff: ", error, " Target", target)
         self.integral += error * dt #+ Kaw * (output_sat - output)
         
         #self.integral = clamp(self.integral, -10, 10)
@@ -44,10 +47,10 @@ class PIDController:
             (1 - self.derivative_smoothing_alpha) * derivative
         )
         derivative = self.derivative_filtered
-        print("Derivation: ", derivative)
-        print("Integral: ", self.integral)
+        #print("Derivation: ", derivative)
+        #print("Integral: ", self.integral)
         
-        print("\n\n\n")
+        #print("\n\n\n")
         
         output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
         
