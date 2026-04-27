@@ -1,0 +1,40 @@
+mqtt:
+    host: 192.198.137.1
+    port: 1883
+features: 
+    #- video
+    - "data"
+    #- commands
+    #- none
+rover:
+    velocity: 0.5
+    enable_pid: true
+    odometry:
+        wheel_base_width: 0.10 # m, 10cm --> 0.10 cm
+        gpio:
+            left: 10
+            right: 9
+    motor:
+        gpio:
+            left:
+                in1: 22
+                in2: 23
+                pwm: 13
+            right:
+                in1: 17
+                in2: 27
+                pwm: 12
+        pid:
+            left:
+                kp: 0
+                ki: 0
+                kd: 0
+            right:
+                kp: 2
+                ki: 0.5
+                kd: 0
+        pwm:
+            bais:
+                left: 0
+                right: 10
+    

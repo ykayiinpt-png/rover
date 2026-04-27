@@ -53,7 +53,7 @@ class CommunicationProcess(multiprocessing.Process):
             asyncio.run(self.main())
         except KeyboardInterrupt:
             logging.info("[CommunicationProcess] KeyboardInterrupt received, exiting...")
-            print("Loop is running:", self.loop.is_running())
+            #print("Loop is running:", self.loop.is_running())
         except Exception as e:
             logging.exception("[CommunicationProcess] Exception occured")
             raise e

@@ -50,7 +50,7 @@ class RaspberryPi:
             
             try:
                 self.send_queue.put(data, block=False)
-                print("Data put in queue")
+                #print("Data put in queue")
             except Exception as e:
                 logging.exception("[RaspBerry Pi] Error while sending data to queue")
             
@@ -58,9 +58,9 @@ class RaspberryPi:
             # 5. read data from remote server (command, data, etc...)
             if not self.receive_queue.empty():
                 remote_data = self.receive_queue.get()
-                print("Remote data: ", remote_data)
+                #print("Remote data: ", remote_data)
             # 6. Make decision
-            print("[RaspBerry Pi] Iteration done")
+            #print("[RaspBerry Pi] Iteration done")
             time.sleep(1)
             
         logging.info("Raspberry PI main loop closed")

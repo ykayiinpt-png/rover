@@ -2,11 +2,12 @@ import time
 
 
 class PIDController:
-    def __init__(self, kp, ki, kd):
+    def __init__(self, name, kp, ki, kd):
         self.kp, self.ki, self.kd = kp, ki, kd
         self.prev_error = 0
         self.integral = 0
         self.last_time = time.perf_counter()
+        self.name = name
 
     def compute(self, target_speed, current_speed):
         now = time.perf_counter()
@@ -14,11 +15,13 @@ class PIDController:
         if dt <= 0: return 0
         
         error = target_speed - current_speed
-        print("target_speed diff: ", error)
+        print(f"PID {self.name} target_speed diff: ", error, " Target", target_speed)
         self.integral += error * dt
         derivative = (error - self.prev_error) / dt
         print("Derivation: ", derivative)
         print("Integral: ", self.integral)
+        
+        print("\n\n\n")
         
         output = (self.kp * error) + (self.ki * self.integral) + (self.kd * derivative)
         

@@ -1,5 +1,8 @@
 import logging
+import faulthandler
+faulthandler.enable()
 
+from src.raspberry.config import Config
 from src.raspberry.hardware.rover import Rover
 from src.raspberry.hardware.rover.odometry import WheelOdometry
 from src.raspberry.imu_ekf_controller import ImuEkfController
@@ -49,7 +52,9 @@ if sys.platform.lower() == "win32" or os.name.lower() == "nt":
 from src.raspberry.communication.process import CommunicationProcess
 from src.raspberry.pi import RaspberryPi
 
-def main(host: str, port: int, features: list[str]):
+def main():
+    cfg = Config()
+    
     map_data_send_queue = multiprocessing.Queue(maxsize=1000)
     ultrasound_data_sent_queue = multiprocessing.Queue(maxsize=1000)
     imu_data_send_queue=multiprocessing.Queue(maxsize=1000)
@@ -59,10 +64,11 @@ def main(host: str, port: int, features: list[str]):
     
     communication_process= None
     
+    features = cfg.features
     
     if "data" in features:
         communication_process = CommunicationProcess(
-            host=host, port=port,
+            host=cfg.mqtt.host, port=cfg.mqtt.port,
             ultrasound_data_sent_queue=ultrasound_data_sent_queue,
             imu_data_send_queue=imu_data_send_queue,
             odometry_data_sent_queue=odometry_data_sent_queue,
@@ -81,18 +87,37 @@ def main(host: str, port: int, features: list[str]):
     )
     
     odometry = WheelOdometry(
-        left_pin=9, right_pin=10,
+        left_pin=10, right_pin=9,
         tpr=20, diameter=0.065 # 6.5cm
     )
     
     rover = Rover(
         odo= odometry,
-        pins_left={"pwm": 12 , "in1_pin": 17 , "in2_pin": 27},
-        pins_right={"pwm": 13 , "in1_pin": 22 , "in2_pin": 23},
-        pid_left={"P": 0.0, "I": 0.0, "D": 0.0},
-        pid_right={"P": 0.0, "I": 0.0, "D": 0.0},
-        wheel_base_width=0.10, # 10 cm -> 0.10 m
-        active_pid=True
+        pins_right={
+            "pwm": cfg.rover.motor.gpio.right.pwm ,
+            "in1_pin": cfg.rover.motor.gpio.right.in1,
+            "in2_pin": cfg.rover.motor.gpio.right.in2
+        },
+        pins_left={
+            "pwm": cfg.rover.motor.gpio.left.pwm ,
+            "in1_pin": cfg.rover.motor.gpio.left.in1,
+            "in2_pin": cfg.rover.motor.gpio.left.in2
+        },
+        pid_right={
+            "P": cfg.rover.motor.pid.right.kp,
+            "I": cfg.rover.motor.pid.right.ki,
+            "D": cfg.rover.motor.pid.right.kd
+        },
+        pid_left={
+            "P": cfg.rover.motor.pid.left.kp,
+            "I": cfg.rover.motor.pid.left.ki,
+            "D": cfg.rover.motor.pid.left.kd
+        },
+        pwm_bais_left=cfg.rover.motor.pwm.bais.left,
+        pwm_bais_right=cfg.rover.motor.pwm.bais.right,
+        
+        wheel_base_width=cfg.rover.odometry.wheel_base_width,
+        active_pid=cfg.rover.enable_pid
     )
     
     robot_ctrl = ImuEkfController(
@@ -147,8 +172,7 @@ def main(host: str, port: int, features: list[str]):
             try:
                 if communication_process is not None and communication_process.is_alive():
                     communication_process.terminate()
-                    communication_process.join(timeout=20)
-
+                    communication_process.join(timeout=5)
 
                     if communication_process.is_alive():
                         logging.warning("[Main] Server Force killing Communcation process...")
@@ -157,39 +181,30 @@ def main(host: str, port: int, features: list[str]):
                 logging.info("[Main] Clean exit.")
             except Exception as e:
                 logging.exception("Exception while running")
+                
+        try:
+            GPIO.cleanup()
+        except Exception:
+            pass
             
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--mqtt_host",
-        type=str,
-        required=True,
-        help="MQTT Host (e.g. 127.0.0.1)"
-    )
-
-    parser.add_argument(
-        "--mqtt_port",
-        type=int,
-        default=1883,
-        help="MQTT Port number (default: 1883)"
-    )
     
     parser.add_argument(
-        "--feature",
+        "--conf_path",
         type=str,
-        action='append',
-        choices=["video", "data", "commands", "none"],
-        required=True,
-        help="Features to activate, video processing, data excahnge and remote commands"
+        default="config.local.yml",
+        help="Path to the config file a config.yml file"
     )
     
     args = parser.parse_args()
     
     
-    try: 
-        main(host=args.mqtt_host, port=args.mqtt_port, features=args.feature)
+    try:
+        cfg = Config(config_path=args.conf_path)
+        
+        main()
     except Exception as e:
         logging.exception("Exception in main")
     finally:
@@ -197,51 +212,3 @@ if __name__ == "__main__":
             GPIO.cleanup()
         except Exception:
             pass
-
-"""
-
-def main():
-    robot_ctrl = None
-    try:
-        sonar_array=UltrasoundSensorArray(
-            [
-                {'name': 'Back',  "key": "u_b", 'trig': 16, 'echo': 19},
-                {'name': 'Front', "key": "u_f", 'trig': 20, 'echo': 21},
-                {'name': 'Right', "key": "u_r", 'trig': 26, 'echo': 7}, # NOTE: Have to disable SPI in order to add interruption to the pin 7 an SPI PIN
-                {'name': 'Left',  "key": "u_l", 'trig': 5, 'echo': 6}
-            ]
-        )
-        
-        rover = Rover(
-            odo= None,
-            pins_left={"pwm": 12 , "in1_pin": 17 , "in2_pin": 27}, pins_right={"pwm": 13 , "in1_pin": 22 , "in2_pin": 23},
-            wheel_base_width=0.10 # 10 cm -> 0.10 m
-        )
-        
-        robot_ctrl = ImuEkfController(
-            rover=rover,
-            sonars_arr_obj=sonar_array,
-            imu=IMUSensor(name="i")
-        )
-        print(robot_ctrl)
-        
-        robot_ctrl.run()
-    except Exception as e:
-        print("Has exception")
-        raise e
-    finally:
-        if robot_ctrl is not None:
-            robot_ctrl.stop()
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        logging.exception("Exception occured")
-        
-    try:
-        GPIO.cleanup()
-    except Exception:
-        pass
-
-"""

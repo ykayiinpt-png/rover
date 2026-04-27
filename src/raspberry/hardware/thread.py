@@ -47,10 +47,10 @@ class UltrasoundThread(threading.Thread):
                 
                 self.send_queue.put(data)
                 
-                print("\n\n\ Data sent")
-                print(data)
+                #print("\n\n\ Data sent")
+                #print(data)
             
-            time.sleep(0.00001) # TODO: Necessary ?
+            time.sleep(0.01) # TODO: Necessary ?
             
         logging.info("Ultrasound Thread loop closed")
             
@@ -84,7 +84,7 @@ class IMUThread(threading.Thread):
         self.buffer_size = 20
 
     def run(self):
-        print("Run ImuThread")
+        #print("Run ImuThread")
         while not self.stop_event.is_set():       
             # Mise à jour des données brutes et calcul du Yaw
             self.sensor.update() 
@@ -110,8 +110,8 @@ class IMUThread(threading.Thread):
                 
                 self.imu_data_send_queue.put(q_data)
                 
-                print("\n\n\ IMU Data sent")
-                print(q_data)
+                #print("\n\n\ IMU Data sent")
+                #print(q_data)
             
             with self.lock:
                 self.accel_x = data['accel']['x']

@@ -39,7 +39,7 @@ class IMUSensor:
         self.filter = IMUFilter()
         
     def calibrate(self, samples=200):
-        print("Calibration de l'IMU... Ne pas bouger !")
+        #print("Calibration de l'IMU... Ne pas bouger !")
         sums = 0
         for _ in range(samples):
             # IL FAUT LIRE LE CAPTEUR RÉELLEMENT ICI
@@ -49,7 +49,7 @@ class IMUSensor:
             
         self.gyro_bias = sums / samples
         self.is_calibrated = True
-        print(f"Calibration terminée. Biais: {self.gyro_bias:.4f} deg/s")
+        #print(f"Calibration terminée. Biais: {self.gyro_bias:.4f} deg/s")
 
     def _setup_sensor(self):
         """
@@ -57,7 +57,7 @@ class IMUSensor:
         """
         # Exemple pour MPU-6050 : Sortir du mode veille
         self.bus.write_byte_data(self.address, 0x6B, 0)
-        print(f"IMU {self.name} initialisée à l'adresse {hex(self.address)}")
+        #print(f"IMU {self.name} initialisée à l'adresse {hex(self.address)}")
 
     def _read_raw_data(self, addr):
         """

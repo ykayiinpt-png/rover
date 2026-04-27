@@ -42,9 +42,9 @@ class DataAckSyncMqtt(RThread):
             # Check if we have data from the remote server
             if not self.queue_bridge.q_sync.empty():
                 payload = self.queue_bridge.q_sync.get_nowait()
-                print("Data from remote server")
-                #print(payload)
-                #print(type(payload))
+                #print("Data from remote server")
+                ##print(payload)
+                ##print(type(payload))
                 
                 # Check topic and data back to the
                 # slam/rover/commands/remote
@@ -55,8 +55,8 @@ class DataAckSyncMqtt(RThread):
                 self.ultrasound_data_sent_queue, self.imu_data_send_queue]:
                 if not q.empty():
                     data = q.get_nowait()
-                    print("Payload do Send: ", data)
-                    print(type(data))
+                    ##print("Payload do Send: ", data)
+                    ##print(type(data))
                     
                     self.queue_bridge.push_from_thread({
                         "topic": data.get("topic", "all"),

@@ -45,7 +45,7 @@ class WheelEncoder:
             delta = 0
         
         self.last_delta_ticks = current_ticks
-        print("Delta: ", delta, self.total_ticks)
+        print(f"{self.name} Delta: ", delta, self.total_ticks)
         distance = delta * self.per_tick
         if dt > 0:
             raw_velocity = distance / dt
@@ -64,7 +64,7 @@ class WheelEncoder:
 
     def stop(self):
         GPIO.remove_event_detect(self.pin)
-        print(f"Encodeur {self.name} arrêté.")
+        #print(f"Encodeur {self.name} arrêté.")
 
 
 class WheelOdometry:
