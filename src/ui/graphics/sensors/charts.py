@@ -148,7 +148,7 @@ class UltraSoundsCharts(QWidget):
                     self.distances[k][:-l] = self.distances[k][l:]
                     self.distances[k][-l:] = dict_arr[k]
                     
-                print("After Cropped", len(self.distances[k]))
+                #print("After Cropped", len(self.distances[k]))
                 
                 self.lines[k].setData(self.time, self.distances[k])
         
@@ -186,7 +186,7 @@ class SensorsChartsContorller(QThread):
         while not self.stop_event.is_set():
             if not self.data_queue.empty():
                 data = self.data_queue.get()
-                print("Data in Widget: ", data)
+                #print("Data in Widget: ", data)
                 
                 if type(data) is dict:
                     for k in data.keys():
@@ -249,6 +249,6 @@ class SensorCharts(QWidget):
             pass
         
     def slot_update_utltra_sounds_chart(self, data: dict):
-        print("Data in slot", data)
+        #print("Data in slot", data)
         self.ultrasounds_widget.update_charts(data)
         

@@ -165,6 +165,106 @@ class VstreamClientProcess(Process):
         self.vstream_client = None
   
 
+class VstreamlientRemoteProcess(Process):
+    """
+    Stream from a direct video stream
+    
+    Frame are sent in bytes over a direct connection mainly over tcp
+    """
+    
+    def __init__(self, 
+                compute_result_queue: multiprocessing.Queue,  video_uri,
+                *args, **kwargs):
+        """
+        :param compute_result_queue: a multiprocessing queue where frame processing
+        result will be sent to
+        :param io_url: the socket io server url. It uses the namespace /video to communicate
+        """
+        
+        super().__init__(*args, **kwargs)
+        
+        self.stop_event = None
+        
+        self.video_uri = video_uri
+        self.vstream_client = None
+        
+        # Red frames are pushed to this queue for other to read thems
+        self.track_queue = multiprocessing.Queue(maxsize=1000)
+        self.compute_result_queue = compute_result_queue
+        
+        self.loop = None
+    
+    def run(self):
+        try:
+            asyncio.run(self.main())
+        except KeyboardInterrupt:
+            logging.info("[In VstreamClientProcess] KeyboardInterrupt received, exiting...")
+            print("Loop is running:", self.loop.is_running())
+        except Exception as e:
+            logging.exception("[In Camera Async] Exception occured")
+            raise e
+        finally:
+            self.track_queue.close()
+            self.track_queue.join_thread()
+        
+    def handle_shutdown(self, signum, frame):
+        logging.info(f"[SocketIO] Received signal {signum}, shutting down...")
+        self.stop_event.set()
+    
+    async def main(self):
+        loop = asyncio.get_running_loop()
+        self.loop = loop
+        self.stop_event = asyncio.Event(loop=self.loop)
+        
+        logging.info("[RtcTrackClientProcess] Video Track Event loop Set")
+        
+        
+        self.computing_thread = RtcTrackComputeThread(
+            track_queue=self.track_queue,
+            compute_result_queue=self.compute_result_queue
+        )
+        
+        
+        signal.signal(signal.SIGTERM, self.handle_shutdown)
+        signal.signal(signal.SIGINT, self.handle_shutdown)
+        
+        try:
+            self.computing_thread.start()
+            
+            await self.stop_event.wait()
+        except KeyboardInterrupt:
+            pass
+        except asyncio.CancelledError:
+            logging.warning("[RtcTrackClientProcess] CancelledError fired")
+            pass
+        finally:
+            logging.info("\n Closing camera async process")
+            await self.__stop()
+            
+            # Exi the  stop waiter
+            self.stop_event.set()
+            
+            # Stop the thread
+            
+            self.computing_thread.request_stop()
+            self.computing_thread.join()
+            self.close()
+            
+            logging.info("[RtcTrackClientProcess] Finally closed")
+        
+        
+    async def __stop(self):
+        """
+        Stop the camera process
+        
+        INFORMATION: calling this outside the process will not pass variables value because
+        it is a new process that has it's own memory
+        """        
+        logging.info("[RtcTrackClientProcess] Setting stooping down")
+        self.stop_event.set()
+        
+  
+
     
 class RtcTrackClientProcess(Process):
     """

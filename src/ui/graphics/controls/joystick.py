@@ -106,7 +106,7 @@ class KeyboardJoystickWidget(QWidget):
             "payload": {"x": 0, "y": 0, "a": "stop"}
         })
         
-        print("STOP")
+        #print("STOP")
         self.update()
 
     # ---------- CONTINUOUS EMIT ----------
@@ -136,7 +136,7 @@ class KeyboardJoystickWidget(QWidget):
             return
         
         self.commands_send_queue.put({
-            "topic": "slam/commands/raspberry",
+            "topic": "slam/rover/commands/remote",
             "payload": {"x": x, "y": y, "a": "move"}
         })
 

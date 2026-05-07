@@ -34,9 +34,9 @@ class RaspberryDataAckMqtt(RThread):
             # Check if we have data from the remote server
             if not self.queue_bridge.q_sync.empty():
                 payload: dict = self.queue_bridge.q_sync.get_nowait()
-                print("Data from remote server")
-                print(payload)
-                print(type(payload))
+                #print("Data from remote server")
+                #print(payload)
+                #print(type(payload))
                 
                 if payload.get("topic") is not None and payload.get("data") is not None:
                     if payload.get("topic") == "slam/sensors/data/ultrasound":

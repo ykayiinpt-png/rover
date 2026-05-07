@@ -42,6 +42,12 @@ class ZRotationWidget(pg.GraphicsLayoutWidget):
 
     def update_gauge(self, angle1, angle2):
         # angles entre 0 et pi
+        angle1 = np.deg2rad(angle1)
+        angle2 = np.deg2rad(angle2)
+        
+        angle1 += np.pi/2
+        angle2 += np.pi/2
+        
         x1, y1 = np.cos(angle1), np.sin(angle1)
         x2, y2 = np.cos(angle2), np.sin(angle2)
 
@@ -80,7 +86,7 @@ class StateVelocityContorller(QThread):
                     for k in data.keys():
                         # z - axis velocity
                         # rot - rotation in the rover system
-                        if k in ["z", "rot"]:
+                        if k in ["g_z", "theta"]:
                             if type(data[k]) is not list:
                                 data[k] = [data[k]]
                 
@@ -92,7 +98,7 @@ class StateVelocityContorller(QThread):
             # Handle the odometry queue
             if not self.odometry_data_queue.empty():
                 data = self.odometry_data_queue.get()
-                print("Data in ODOMETRY velocity Widget: ", data)
+                #print("Data in ODOMETRY velocity Widget: ", data)
                 
                 if type(data) is dict:
                     for k in data.keys():
@@ -139,18 +145,35 @@ class RobotVelocityStateWidget(QWidget):
         left_layout = QVBoxLayout()
 
         styles = {"color": "white", "font-size": "10px" }
-        # plot principal
-        self.main_plot = pg.PlotWidget(title="X-Axis Velocity")
-        self.main_plot.setFixedWidth(400)
-        self.main_plot.setFixedHeight(250)
-        self.main_plot.setLabel("left", "m/s", **styles)
-        self.main_plot.setLabel("bottom", "time (ms)", **styles)
-        self.main_plot.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
-            
-        self.main_plot.setBackground("#1E1E1E")
-        self.x_axis_accl_curve = self.main_plot.plot(pen='c')
+        # plot Vitesse de rotation
+        self.theta_plot1 = pg.PlotWidget(title="Z-Gyro Velocity")
+        self.theta_plot1.setFixedWidth(400)
+        self.theta_plot1.setFixedHeight(250)
+        self.theta_plot1.setLabel("left", "rad/s", **styles)
+        self.theta_plot1.setLabel("bottom", "time", **styles)
+        self.theta_plot1.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
+        self.theta_plot1.setBackground("#1E1E1E")
+        self.theta_plot1.addLegend()
+        self.z_gyro_accl_curve = self.theta_plot1.plot(pen='c')
+        self.theta_plot1_label = QLabel(self, text="--")
+        
+        # Plot theta command and target
+        self.theta_plot2 = pg.PlotWidget(title="Z-Theta")
+        self.theta_plot2.setFixedWidth(400)
+        self.theta_plot2.setFixedHeight(250)
+        self.theta_plot2.setLabel("left", "rad", **styles)
+        self.theta_plot2.setLabel("bottom", "time", **styles)
+        self.theta_plot2.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
+        self.theta_plot2.setBackground("#1E1E1E")
+        self.theta_plot2.addLegend()
+        self.theta_command_plot = self.theta_plot2.plot(pen="r", name="Command")
+        self.theta_target_plot = self.theta_plot2.plot(pen="g", name="Target")
+        self.theta_plot2_label = QLabel(self, text="--")
 
-        left_layout.addWidget(self.main_plot)
+        left_layout.addWidget(self.theta_plot1)
+        left_layout.addWidget(self.theta_plot1_label)
+        left_layout.addWidget(self.theta_plot2)
+        left_layout.addWidget(self.theta_plot2_label)
 
         # gauge
         self.gauge = ZRotationWidget()
@@ -166,8 +189,8 @@ class RobotVelocityStateWidget(QWidget):
         self.plot1.setFixedHeight(250)
         self.plot1.setBackground("#1E1E1E")
         self.plot1.addLegend()
-        self.plot1.setLabel("left", "m/s", **styles)
-        self.plot1.setLabel("bottom", "time (ms)", **styles)
+        self.plot1.setLabel("left", "RPM/s", **styles)
+        self.plot1.setLabel("bottom", "time", **styles)
         self.plot1.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
         self.wheel_left_command = self.plot1.plot(pen='r', name="Command")
         self.wheel_left_target = self.plot1.plot(pen='g', name="Target")
@@ -178,8 +201,8 @@ class RobotVelocityStateWidget(QWidget):
         self.plot2.setFixedHeight(250)
         self.plot2.setBackground("#1E1E1E")
         self.plot2.addLegend()
-        self.plot2.setLabel("left", "m/s", **styles)
-        self.plot2.setLabel("bottom", "time (ms)", **styles)
+        self.plot2.setLabel("left", "RPM/s", **styles)
+        self.plot2.setLabel("bottom", "time", **styles)
         self.plot2.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
         self.wheel_right_command = self.plot2.plot(pen='y', name="Command")
         self.wheel_right_target = self.plot2.plot(pen='m', name="Target")
@@ -201,21 +224,30 @@ class RobotVelocityStateWidget(QWidget):
         self.plot3.setBackground("#1E1E1E")
         self.plot3.addLegend()
         self.plot3.setLabel("left", "%", **styles)
-        self.plot3.setLabel("bottom", "time (ms)", **styles)
+        self.plot3.setLabel("bottom", "time", **styles)
         self.plot3.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
-        self.pwm_left_plot = self.plot3.plot(pen='r')
+        self.pwm_left_plot = self.plot3.plot(pen='r', name="L")
+        self.pwm_right_plot = self.plot3.plot(pen='g', name="R")
         self.plot3_label = QLabel(self, text="--")
 
 
-        self.plot4 = pg.PlotWidget(title="PWM=100Hz Duty Cycle Right")
+        self.plot4 = pg.PlotWidget(title="Error-Cum_Integral-Derivative Curves")
         self.plot4.setFixedWidth(400)
         self.plot4.setFixedHeight(250)
         self.plot4.setBackground("#1E1E1E")
         self.plot4.addLegend()
-        self.plot4.setLabel("left", "m/s", **styles)
-        self.plot4.setLabel("bottom", "time (ms)", **styles)
+        self.plot4.setLabel("left", "", **styles)
+        self.plot4.setLabel("bottom", "time", **styles)
         self.plot4.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
-        self.pwm_right_plot = self.plot4.plot(pen='g', name="Right")
+        self.pid_l_error_plot = self.plot4.plot(name="L_E",pen=0)
+        self.pid_l_integral_plot = self.plot4.plot(name="L_I",pen=1)
+        self.pid_l_derivative_plot = self.plot4.plot(name="L_D",pen=2)
+        self.pid_r_error_plot = self.plot4.plot(name="R_E",pen=3)
+        self.pid_r_integral_plot = self.plot4.plot(name="R_I",pen=4)
+        self.pid_r_derivative_plot = self.plot4.plot(name="R_D",pen=5)
+        self.pid_th_error_plot = self.plot4.plot(name="A_E",pen=6)
+        self.pid_th_integral_plot = self.plot4.plot(name="A_I",pen=7)
+        self.pid_th_derivative_plot = self.plot4.plot(name="A_D",pen=8)
         self.plot4_label = QLabel(self, text="--")
 
 
@@ -230,12 +262,12 @@ class RobotVelocityStateWidget(QWidget):
         
 
         # ===== DATA =====
-        self.maxlen = 2000
+        self.maxlen = 5000
         time_now = datetime.now(timezone.utc).timestamp()
         self.x_imu_time = deque([time_now - i for i in range(self.maxlen)], maxlen=self.maxlen)
         self.x_odometry_time = self.x_imu_time.copy()
 
-        self.y_accel_x = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_gyro_z = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
 
         self.y_wl_t = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
         self.y_wl_c = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
@@ -245,6 +277,19 @@ class RobotVelocityStateWidget(QWidget):
         
         self.y_wl_p = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
         self.y_wr_p = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        
+        self.y_pidl_e = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_pidl_i = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_pidl_d = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_pidr_e = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_pidr_i = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_pidr_d = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_pidth_e = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_pidth_i = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_pidth_d = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        
+        self.y_theta_t = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
+        self.y_theta_c = deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen)
 
         self.t = 0
 
@@ -295,10 +340,24 @@ class RobotVelocityStateWidget(QWidget):
             self.y_wl_p.extend(data["wl_p"])
             self.y_wr_p.extend(data["wr_p"])
             
+            self.y_pidl_e.extend(data["wl_pid_e"])
+            self.y_pidl_i.extend(data["wl_pid_i"])
+            self.y_pidl_d.extend(data["wl_pid_d"])
+            self.y_pidr_e.extend(data["wr_pid_e"])
+            self.y_pidr_i.extend(data["wr_pid_i"])
+            self.y_pidr_d.extend(data["wr_pid_d"])
+            self.y_pidth_e.extend(data["th_pid_e"])
+            self.y_pidth_i.extend(data["th_pid_i"])
+            self.y_pidth_d.extend(data["th_pid_d"])
+            
+            self.y_theta_t.extend(data["th_t"])
+            self.y_theta_c.extend(data["th_c"])
+            
             self.plot1_label.setText(f"T={self.y_wl_t[-1]:05.2f} C={self.y_wl_c[-1]:05.2f} Error={(self.y_wl_t[-1] - self.y_wl_c[-1]):05.2f}")
             self.plot2_label.setText(f"T={self.y_wr_t[-1]:05.2f} C={self.y_wr_c[-1]:05.2f} Error={(self.y_wr_t[-1] - self.y_wr_c[-1]):05.2f}")
-            self.plot3_label.setText(f"DutyCycle={self.y_wl_p[-1]:05.2f}")
-            self.plot4_label.setText(f"DutyCycle={self.y_wr_p[-1]:05.2f}")
+            self.plot3_label.setText(f"L={self.y_wl_p[-1]:05.2f} R={self.y_wr_p[-1]:05.2f}")
+            self.theta_plot2_label.setText(f"T={self.y_theta_t[-1]:05.2f} C={self.y_theta_c[-1]:05.2f} Error={(self.y_theta_t[-1] - self.y_theta_c[-1]):05.2f}")
+            #self.plot4_label.setText(f"DutyCycle={self.y_wr_p[-1]:05.2f}")
             
             # Draw
             self.wheel_left_command.setData(self.x_odometry_time, self.y_wl_c)
@@ -309,6 +368,21 @@ class RobotVelocityStateWidget(QWidget):
             
             self.pwm_right_plot.setData(self.x_odometry_time, self.y_wr_p)
             self.pwm_left_plot.setData(self.x_odometry_time, self.y_wl_p)
+            
+            self.pid_l_error_plot.setData(self.x_odometry_time, self.y_pidl_e)
+            self.pid_l_integral_plot.setData(self.x_odometry_time, self.y_pidl_i)
+            self.pid_l_derivative_plot.setData(self.x_odometry_time, self.y_pidl_d)
+            self.pid_r_error_plot.setData(self.x_odometry_time, self.y_pidr_e)
+            self.pid_r_integral_plot.setData(self.x_odometry_time, self.y_pidr_i)
+            self.pid_r_derivative_plot.setData(self.x_odometry_time, self.y_pidr_d)
+            self.pid_th_error_plot.setData(self.x_odometry_time, self.y_pidth_e)
+            self.pid_th_integral_plot.setData(self.x_odometry_time, self.y_pidth_i)
+            self.pid_th_derivative_plot.setData(self.x_odometry_time, self.y_pidth_d)
+            
+            self.theta_command_plot.setData(self.x_odometry_time, self.y_theta_c)
+            self.theta_target_plot.setData(self.x_odometry_time, self.y_theta_t)
+            
+            self.gauge.update_gauge(self.y_theta_t[-1], self.y_theta_c[-1]) # Just the last value
            
 
     def slot_update_rotation_chart(self, data: dict):
@@ -316,13 +390,14 @@ class RobotVelocityStateWidget(QWidget):
         Update the rotationnary angle
         """
         with self.draw_lock:
-            self.x_imu_time.extend(self.x_imu_time[-1] + np.arange(1, len(data["a_x"])+1) * data["batch_dt"]["ax"])
+            self.x_imu_time.extend(self.x_imu_time[-1] + np.arange(1, len(data["g_z"])+1) * data["batch_dt"]["ax"])
             
-            self.y_accel_x.extend(data["a_x"])
+            self.y_gyro_z.extend(data["g_z"])
             
             # Draw
-            self.x_axis_accl_curve.setData(self.x_imu_time, self.y_accel_x)
-            self.gauge.update_gauge(0, data["rot"][-1]) # Just the last value
+            self.z_gyro_accl_curve.setData(self.x_imu_time, self.y_gyro_z)
+            self.theta_plot1_label.setText(f"Value={self.y_gyro_z[-1]}")
+            #self.gauge.update_gauge(0, data["rot"][-1]) # Just the last value
 
 
     def update(self):
@@ -344,7 +419,7 @@ class RobotVelocityStateWidget(QWidget):
 
         # append
         self.x.append(x_val)
-        self.y_accel_x.append(y_z)
+        self.y_gyro_z.append(y_z)
 
         self.y_wl_t.append(y1)
         self.y_wl_c.append(y2)
@@ -353,7 +428,7 @@ class RobotVelocityStateWidget(QWidget):
         self.y_wr_c.append(y4)
 
         # update plots
-        self.x_axis_accl_curve.setData(self.x, self.y_accel_x)
+        self.z_gyro_accl_curve.setData(self.x, self.y_gyro_z)
 
         self.wheel_left_command.setData(self.x, self.y_wl_t)
         self.wheel_left_target.setData(self.x, self.y_wl_c)

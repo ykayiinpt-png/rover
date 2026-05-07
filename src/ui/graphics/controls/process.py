@@ -29,9 +29,9 @@ class RaspberryCommandsAckMqtt(RThread):
             # Check if we have data from the remote server
             if not self.queue_bridge.q_sync.empty():
                 payload = self.queue_bridge.q_sync.get_nowait()
-                print("Data from remote server")
-                print(payload)
-                print(type(payload))
+                #print("Data from remote server")
+                #print(payload)
+                #print(type(payload))
                 
                 self.receive_queue.put(payload)
             
@@ -83,7 +83,8 @@ class RaspberryCommandsAckProcess(multiprocessing.Process):
             logging.exception("[RaspberryCommandsAckProcess] Exception occured")
             raise e
         finally:
-            self.data_queue.close()
+            pass
+            #self.data_queue.close()
             
     async def main(self):
         loop = asyncio.get_running_loop()

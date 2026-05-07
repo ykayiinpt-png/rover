@@ -38,6 +38,10 @@ optional arguments:
 
 ```
 
+```bash
+python main_ui.py --mqtt_host=192.168.137.1 --feature data --feature commands
+```
+
 Install package and ignore not compatible
 ```bash
 python -c "import subprocess; [subprocess.run(['pip', 'install', line.strip()]) for line in open('requirements.txt') if line.strip() and not line.startswith('#')]"
