@@ -91,7 +91,7 @@ class IMUThread(threading.Thread):
                 "topic": "slam/sensors/data/imu",
                 "payload": {
                     "time": current_timestamp,
-                    "batch_dt": { "ax": 0.1, "rot": 0.1 },
+                    "batch_dt": { "ax": 0.05, "rot": 0.05 },
                     # Ultrasound
                     # 2 -> yaw
                     "theta": [m[2] for m in self.buffer],
@@ -109,8 +109,6 @@ class IMUThread(threading.Thread):
                 logging.exception("Error Sending Imu data to rEMOTE")
 
     def run(self):
-        
-        
         delta_t = 1/self.f
         
         last_time = time.perf_counter()

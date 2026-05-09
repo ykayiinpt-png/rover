@@ -8,6 +8,7 @@ import signal
 
 import asyncio
 import logging
+from typing import Any
 
 
 from src.raspberry.communication.data import DataAckSyncMqtt
@@ -29,6 +30,7 @@ class CommunicationProcess(multiprocessing.Process):
     
     def __init__(self, host: str, port: int,
                 rover_shared_state: DictProxy,
+                rover_shared_state_command_lock: Any, # multiprocessing.synchronize.Lock,
                 ultrasound_data_sent_queue: multiprocessing.Queue,
                 imu_data_send_queue: multiprocessing.Queue,
                 odometry_data_sent_queue: multiprocessing.Queue,
@@ -49,6 +51,7 @@ class CommunicationProcess(multiprocessing.Process):
         self.map_data_send_queue = map_data_send_queue
         
         self.rover_shared_state = rover_shared_state
+        self.rover_shared_state_command_lock = rover_shared_state_command_lock
         
         self.mqtt_client: MqttClient = None
     
@@ -89,6 +92,7 @@ class CommunicationProcess(multiprocessing.Process):
         self.component = ThreadMqttComponent(
             DataAckSyncMqtt(
                 rover_shared_state=self.rover_shared_state,
+                rover_shared_state_command_lock=self.rover_shared_state_command_lock,
                 ultrasound_data_sent_queue=self.ultrasound_data_sent_queue,
                 imu_data_send_queue=self.imu_data_send_queue,
                 odometry_data_sent_queue=self.odometry_data_sent_queue,

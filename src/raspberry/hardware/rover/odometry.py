@@ -193,11 +193,17 @@ class WheelEncoder:
             ) * 60 # Multiply by 60 convert RPsecond to RevolutionPer Minute
         else:
             raw_velocity = 0
-            
-        self.velocity_filtered = self.filter.filter(raw_velocity)
+        
+        
+        if raw_velocity < 400: # TODO: use a multiplier of the base velocity
+            self.velocity_filtered = self.filter.filter(raw_velocity)
+        #else:
+        #    pass
         
         # Backup time
         self.last_time = now
+        
+        print("V_Filtered: ", self.velocity_filtered)
         
         return delta, dist, self.velocity_filtered
 
@@ -226,7 +232,17 @@ class WheelOdometry:
 
     def get_movement(self):
         """
-        Compute the average movement of the robot
+        Compute the robot's average movement based on wheel motion.
+
+        Returns:
+            dict: Dictionary containing:
+                - "avg_dist" (float): Average distance traveled by the robot.
+                - "left" (dict): Movement data for the left wheel:
+                    - "dist" (float): Distance traveled by the wheel.
+                    - "v" (float): Wheel velocity.
+                - "right" (dict): Movement data for the right wheel:
+                    - "dist" (float): Distance traveled by the wheel.
+                    - "v" (float): Wheel velocity.
         """
         #l_ticks, l_dist, l_v = self.left_wheel.get_delta_and_reset()
         #r_ticks, r_dist, r_v = self.right_wheel.get_delta_and_reset()
@@ -244,7 +260,7 @@ class WheelOdometry:
         avg_distance = (l_dist + r_dist) / 2.0
         
         return {
-            "distance": avg_distance, # mm
+            "avg_dist": avg_distance, # mm
             "left": { "dist": l_dist, "v": l_v},
             "right": { "dist": r_dist, "v": r_v},
         }

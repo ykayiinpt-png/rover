@@ -4,7 +4,7 @@ from src.core.utils import clamp, sign
 
 
 class PIDController:
-    def __init__(self, name, kp, ki, kd, error_min, reset_integral=False):
+    def __init__(self, name, kp, ki, kd, error_min, reset_integral=False, max_integral=None, derivative_smoothing_alpha = 0.9):
         self.kp, self.ki, self.kd = kp, ki, kd
         self.prev_error = 0
         self.integral = 0
@@ -14,9 +14,10 @@ class PIDController:
         self.out_filtered = 0
         self.out_smoothing_alpha = 0.0
         self.derivative_filtered = 0
-        self.derivative_smoothing_alpha = 0.9
+        self.derivative_smoothing_alpha = derivative_smoothing_alpha
         self.error_min = error_min
         self.reset_integral = reset_integral
+        self.max_integral = max_integral
         
     def interrupt(self):
         self.integral = 0
@@ -39,6 +40,8 @@ class PIDController:
             
         #print(f"PID {self.name} target diff: ", error, " Target", target)
         self.integral += error * dt #+ Kaw * (output_sat - output)
+        if self.max_integral:
+            self.integral = clamp(self.integral, -self.max_integral, self.max_integral)
         
         #self.integral = clamp(self.integral, -10, 10)
         derivative = (error - self.prev_error) / dt

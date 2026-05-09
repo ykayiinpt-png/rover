@@ -58,6 +58,7 @@ def main():
     
     processing_manager = multiprocessing.Manager()
     rover_shared_state = processing_manager.dict()
+    rover_shared_state_command_lock = multiprocessing.Lock()
     
     map_data_send_queue = multiprocessing.Queue(maxsize=1000)
     ultrasound_data_sent_queue = multiprocessing.Queue(maxsize=1000)
@@ -73,7 +74,7 @@ def main():
     if "data" in features:
         communication_process = CommunicationProcess(
             host=cfg.mqtt.host, port=cfg.mqtt.port,
-            rover_shared_state=rover_shared_state,
+            rover_shared_state=rover_shared_state, rover_shared_state_command_lock=rover_shared_state_command_lock,
             ultrasound_data_sent_queue=ultrasound_data_sent_queue,
             imu_data_send_queue=imu_data_send_queue,
             odometry_data_sent_queue=odometry_data_sent_queue,
@@ -128,7 +129,10 @@ def main():
     )
     
     imu_sensor = IMUSensor(
-        name="IMU_Sensor"
+        name="IMU_Sensor",
+        bus_number=cfg.imu.bus_number,
+        address=cfg.imu.bus_address,
+        lpf_1_alpha=cfg.imu.gyro.z.lpf_1_alpha
     )
     imu_sensor_thread_lock = threading.Lock()
     
@@ -137,7 +141,9 @@ def main():
     rover = Rover(
         control_mode=Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
+        base_rotation_velocity=cfg.rover.velocity_rotate,
         shared_state=rover_shared_state,
+        shared_state_command_lock=rover_shared_state_command_lock,
         odo= odometry,
         
         imu=imu_sensor,
@@ -161,12 +167,14 @@ def main():
         pid_motor_speed_right={
             "P": cfg.rover.motor_right.pid.kp,
             "I": cfg.rover.motor_right.pid.ki,
-            "D": cfg.rover.motor_right.pid.kd
+            "D": cfg.rover.motor_right.pid.kd,
+            "max_integral": cfg.rover.motor_right.pid.max_integral
         },
         pid_motor_speed_left={
             "P": cfg.rover.motor_left.pid.kp,
             "I": cfg.rover.motor_left.pid.ki,
-            "D": cfg.rover.motor_left.pid.kd
+            "D": cfg.rover.motor_left.pid.kd,
+            "max_integral": cfg.rover.motor_left.pid.max_integral
         },
         pid_angle={
             "P": cfg.rover.angle.straight.pid.kp,
@@ -179,7 +187,8 @@ def main():
         pwm_bais_right=cfg.rover.motor_right.duty_cycle.bais,
         
         wheels_base_distance=cfg.rover.odometry.wheels_base_distance,
-        active_pid=cfg.rover.enable_pid
+        active_pid=cfg.rover.enable_pid,
+        active_angle_pid=cfg.rover.enable_angle_pid
     )
     
     

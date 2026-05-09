@@ -34,7 +34,14 @@ class IMUFilter2Order:
 
 
 class IMUSensor:
-    def __init__(self, name, bus_number=1, address=0x68):
+    def __init__(self, name, bus_number=1, address=0x68, lpf_1_alpha=1):
+        """
+        Initialize the IMUSensor instance
+        
+        :param lpf_1_alpha: the first order low pass filter coefficient 
+            applied on the gyro z-axis  angular velocity
+        """
+        
         self.name = name
         self.bus = smbus2.SMBus(bus_number)
         self.address = address
@@ -52,7 +59,7 @@ class IMUSensor:
         self.is_calibrated = False
         
         self.filter = IMUFilter2Order(fs=100, cutoff_freq=0.05)
-        self.gyro_z_filter = IMUFilter(alpha=1) #IMUFilter2Order(fs=100, cutoff_freq=5) #IMUFilter(alpha=0.999) # IMUFilter2Order(fs=100, cutoff_freq=0.05)
+        self.gyro_z_filter = IMUFilter(alpha=lpf_1_alpha) #IMUFilter2Order(fs=100, cutoff_freq=5) #IMUFilter(alpha=0.999) # IMUFilter2Order(fs=100, cutoff_freq=0.05)
         
     def calibrate(self, samples=200):
         self._mpu.calibrate_gyro()
@@ -96,9 +103,6 @@ class IMUSensor:
             #self.gyro['x'] = self._read_raw_data(0x43) / 131.0
             #self.gyro['y'] = self._read_raw_data(0x45) / 131.0
             
-            # On soustrait le biais ici pour avoir la vitesse angulaire pure
-            #gyro_z_instant = (self._read_raw_data(0x47) / 131.0) # Bah just don't wanna touch
-            
             
             self.gyro['x'], self.gyro['y'], gyro_z_instant  = self._mpu.get_gyro() 
             
@@ -110,10 +114,8 @@ class IMUSensor:
             # 3. Intégration du Yaw (Lacet)
             # Integrate only if we are not in the deadband
             if abs(gyro_z_instant) > 0.001:
-                self.orientation['yaw'] += (gyro_z_instant * dt)  # self.filter.filter(gyro_z_instant * dt)
+                self.orientation['yaw'] += (gyro_z_instant * dt)
                 self.orientation['yaw'] = wrap_angle(self.orientation['yaw'], deg=True)
-                print("IMU Gyro")
-                print (self.orientation['yaw'], gyro_z_instant, dt)
             
             self.last_update = now
         except OSError as e:

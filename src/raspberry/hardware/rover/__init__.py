@@ -3,6 +3,7 @@ import logging
 import multiprocessing
 import threading
 import time
+from typing import Any
 
 import numpy as np
 
@@ -11,6 +12,7 @@ from src.raspberry.hardware.rover.motor import RMotor
 from src.raspberry.hardware.rover.odometry import WheelOdometry
 from src.raspberry.hardware.rover.pid import PIDController
 from src.raspberry.hardware.sensors.imu import IMUSensor
+from src.raspberry.navigation import Navigation
 
 
 
@@ -61,10 +63,18 @@ class Rover:
     """
     
     MODE_MANUAL_NAVIGATION = 0
-    MODE_AUTONOMOUS_NAVIGATION = 0
+    MODE_AUTONOMOUS_NAVIGATION = 1
+    MODE_WAYPOINTS_NAVIGATION = 2
+    
+    COMMAND_STOP = {"x": 0, "y": 0, "a": "stop"}
+    COMMAND_FORWARD = {"x": 0, "y": 1, "a": "move"}
+    COMMAND_BACKWARD = {"x": 0, "y": -1, "a": "move"}
+    COMMAND_TURN_LEFT = {"x": -1, "y": 0, "a": "move"}
+    COMMAND_TURN_RIGHT = {"x": 1, "y": 0, "a": "moves"}
     
     def __init__(self,
                 shared_state: dict,
+                shared_state_command_lock: Any, #multiprocessing.synchronize.Lock,
                 odo: WheelOdometry,
                 imu: IMUSensor,
                 imu_sensor_thread_lock: threading.Lock,
@@ -76,17 +86,20 @@ class Rover:
                 pwm_bais_left=20, pwm_bais_right=20,
                 wheels_base_distance=0.10,
                 active_pid=False,
-                base_velocity=50, no_pid_pwm_dutycycle_value=50):
+                active_angle_pid=False,
+                base_velocity=50, base_rotation_velocity:int=0.1, no_pid_pwm_dutycycle_value=50):
         """
         :param theta_target: the angle to maintant aound the é-axis
         :param control_mode: defines how the rover is controlled. We do have
         the manual and the autonous
         :param wheels_base_distance: the distance that separate the left wheel
         and the right wheel
+        :param base_rotation_velocity: Base angular velocity used for in-place rotations, expressed in degrees per second.
         """
         
         
         self.shared_state = shared_state
+        self.shared_state_command_lock = shared_state_command_lock
         self.imu = imu
         self.imu_sensor_thread_lock = imu_sensor_thread_lock
         self.odo = odo
@@ -99,6 +112,7 @@ class Rover:
         ###################################
         # Motors
         self.active_pid = active_pid
+        self.active_angle_pid = active_angle_pid
         
         self.motor_l = RMotor(
             pwm_pin=motor_left['pwm_pin'], in1_pin=motor_left['in1_pin'], in2_pin=motor_left['in2_pin'],
@@ -111,8 +125,14 @@ class Rover:
         
         
         if pid_motor_speed_left is not None and pid_motor_speed_right is not None:
-            self.pid_speed_l = PIDController("Left", pid_motor_speed_left["P"], pid_motor_speed_left["I"], pid_motor_speed_left["D"], error_min=1, reset_integral=False)
-            self.pid_speed_r = PIDController("Right", pid_motor_speed_right["P"], pid_motor_speed_right["I"], pid_motor_speed_right["D"], error_min=1, reset_integral=False)
+            self.pid_speed_l = PIDController("Left", 
+                pid_motor_speed_left["P"], pid_motor_speed_left["I"], 
+                pid_motor_speed_left["D"], error_min=1, reset_integral=False, 
+                max_integral=pid_motor_speed_left["max_integral"])
+            self.pid_speed_r = PIDController("Right",
+                pid_motor_speed_right["P"], pid_motor_speed_right["I"], 
+                pid_motor_speed_right["D"], error_min=1, reset_integral=False,
+                max_integral=pid_motor_speed_right["max_integral"])
             
         ######################################
         # Straight line
@@ -121,6 +141,7 @@ class Rover:
         self.yaw_estimator = RoverYawEstimator()
         self.theta_target = theta_target
         self.command_theta = 0.0
+        self.pid_angle_last_time = None
         
         ######################################
         # Speed
@@ -130,6 +151,7 @@ class Rover:
         It's expressed in RPM
         """
         self.base_velocity = base_velocity
+        self.base_rotation_velocity = base_rotation_velocity
         self.no_pid_pwm_dutycycle_value = no_pid_pwm_dutycycle_value
         self.target_v_l = self.base_velocity
         self.target_v_r = self.base_velocity
@@ -152,12 +174,16 @@ class Rover:
             "active": False,
             "command": {}
         }
-        self.stop_command = {"x": 0, "y": 0, "a": "stop"}
         
         
         # Other conrols
         if not self.active_pid:
             logging.warning("[Robot Thread] Not active PID")
+            
+        #########################################
+        # Navigation
+        #
+        self.navigation = Navigation()
             
     def set_theta_target(self, theta):
         """
@@ -189,28 +215,34 @@ class Rover:
         self.motor_r.set_speed(0)
         
         self._stopped = True
+    
+    def is_equal_command(self, cmd_one, cmd_two):
+        """
+        Compare two commands and determine whether they are equivalent.
+
+        :param cmd_one (dict): First command to compare.
+        :param cmd_two (dict): Second command to compare.
+
+        Returns:
+            bool: True if both commands are equal, otherwise False.
+        """
         
-    def check_command(self):
+        return dict_equal_fast(cmd_one, cmd_two)
+    
+    def check_command(self, dt):
         """
         Validates commands that will mofify the current movement
         of the robot
         """
         
-        #print(self.shared_state)
         cmd = self.shared_state.get("remote_command", None)
         if cmd is None:
             return
         
-        if self.last_command is None:
-            if cmd.get("x") is not None:
-                self.exec_command(cmd)
-                self.last_command = cmd
-        else:
-            if not dict_equal_fast(cmd, self.last_command):
-                if cmd["a"] == "stop":
-                    self.exec_command(cmd)
-                else:
-                    self.change_direction(cmd)
+        if cmd.get("a") is None:
+            return
+        
+        self.exec_command(cmd, dt)
             
     def change_direction(self, cmd):
         """
@@ -239,13 +271,25 @@ class Rover:
         # Hold the command
         self.last_command = cmd # TODO: We do not need anymore the command key inside the target_v_lock
         
-    def exec_command(self, cmd):
+    def exec_command(self, cmd, dt=None):
         """
         Apply the modification provoked by the new command
         that we have stored
+        
+        :param cmd: the command to execute
+        :param dt: the rover update cycle duration
         """
         
-        if cmd.get("a") == "stop":
+        if dt is None:
+            dt = 0
+            
+        self._stopped = False
+        
+        if cmd.get("x") == 1:
+            self.theta_target -= self.base_rotation_velocity * dt
+        elif cmd.get("x") == -1:
+            self.theta_target += self.base_rotation_velocity * dt
+        elif cmd.get("a") == "stop":
             self.target_v_l = 0
             self.target_v_r = 0
             
@@ -257,10 +301,12 @@ class Rover:
             
             self.move_break()
             logging.info("Stop command received")
-        else:
-            self._stopped = False
             
         self.last_command = cmd
+        
+        # Clear the command
+        with self.shared_state_command_lock:
+            self.shared_state["remote_command"] = None
         
     def update(self, dt):
         """
@@ -288,52 +334,105 @@ class Rover:
         #  START DYNAMIC MOVE
         ##
         
+        base_rpm = self.base_velocity
+        now = time.perf_counter()
         
         ############################################
-        # THETA
+        # SENSORS DATA ACQUISITION
         #
+
         # Read the theta angle from the IMU SENSORS
         imu_data = None
         with self.imu_sensor_thread_lock:
              imu_data = self.imu.get_data()
+        self.command_theta = imu_data[2]
         
-        # TODO: Reactivate this later
+        # TODO: Reactivate this later, because on long duration IMU lies
         #theta = self.yaw_estimator.update(
         #     gyro_z=imu_data[1]["z"],
         #     d_left=dist_l, d_right=dist_r,
         #     dt=dt
         #)
         
+        # Read the odometry movement        
+        movement = self.odo.get_movement()
         
-        theta = imu_data[2]
-        self.command_theta = theta
+        ############################################
+        # Controls
+        #
         
-        theta_error = wrap_angle(self.theta_target - theta, deg=True)
+        theta_error = None
         
-        omega = self.pid_angle.compute(self.theta_target, theta, theta_error)
-        print("Error theta: ", theta_error)
-        print("Angle Omega: ", omega)
-        omega = clamp(omega, -int(self.base_velocity * 0.4), int(self.base_velocity * 0.4))
-        print("Angle Omega Clamped: ", omega)
+        # Waypoints Navigation control
+        if self.control_mode == Rover.MODE_WAYPOINTS_NAVIGATION:
+            theta_to_target, _distance, theta_error = self.navigation.get_target_heading(
+                movement["avg_dist"], self.command_theta
+            )
+            
+            if theta_to_target is None:
+                # We have reached the current waypoint target
+                # so we stop
+                base_rpm = 0
+            else:
+                #self.theta_target = theta_to_target
+                
+                if theta_error == 0:
+                    # We are aligned with the target, so we move forward
+                    self.last_command = Rover.COMMAND_FORWARD
+                    base_rpm = self.base_velocity
+                else:
+                    # We have correction to do by rotate the rover in place
+                    if theta_error > 0:
+                        self.last_command = Rover.COMMAND_TURN_LEFT
+                    elif theta_error < 0:
+                        self.last_command = Rover.COMMAND_TURN_RIGHT
+                    else:
+                        pass
+                    
+                    base_rpm = 0
+        elif self.control_mode == Rover.MODE_AUTONOMOUS_NAVIGATION:
+            theta_error = wrap_angle(self.theta_target - self.command_theta, deg=True)
+            pass
+        elif self.control_mode == Rover.MODE_MANUAL_NAVIGATION:
+            theta_error = wrap_angle(self.theta_target - self.command_theta, deg=True)
+            pass
+        else:
+            pass
+            
+        #################################
+        # PID angle
+        #
+        omega = 0
+        if self.active_angle_pid:
+            if self.pid_angle_last_time is None:
+                self.pid_angle_last_time = now
+            else:
+                # We have to wait some time
+                # so that the velocity can stabilize
+                if now - self.pid_angle_last_time >= 1:
+                    omega = self.pid_angle.compute(self.theta_target, self.command_theta, theta_error)
+                    #print("Error theta: ", theta_error)
+                    #print("Angle Omega: ", omega)
+                    omega = clamp(omega, -int(self.base_velocity * 0.7), int(self.base_velocity * 0.7))
+                    #print("Angle Omega Clamped: ", omega)
         
         ############################################
         # Odometry
-        #
-        movement = self.odo.get_movement()
-        dist_l = movement["left"]["dist"]
-        dist_r = movement["right"]["dist"]
-        
+        #        
         self.command_v_l = movement["left"]["v"]
         self.command_v_r = movement["right"]["v"]
         
+        ############################################
+        # Velocity target control
+        #        
         # Update the target velocity
         if self.last_command["y"] == 1:
-            self.target_v_l = self.base_velocity - omega
-            self.target_v_r = self.base_velocity + omega
+            self.target_v_l = base_rpm - omega
+            self.target_v_r = base_rpm + omega
         elif self.last_command["y"] == -1:
             # Sign are inversed here because we are running backward
-            self.target_v_l = self.base_velocity + omega
-            self.target_v_r = self.base_velocity - omega
+            self.target_v_l = base_rpm + omega
+            self.target_v_r = base_rpm - omega
         else:
             pass 
         
@@ -342,7 +441,7 @@ class Rover:
         if abs(self.target_v_l - self.command_v_l > 1.5*self.base_velocity) or abs(self.target_v_r - self.command_v_l) > 1.5*self.base_velocity:
             pass
         
-        #############################"
+        #############################################
         # Motor PID 
         #
         # out the pwm dutycycle 
@@ -359,22 +458,18 @@ class Rover:
         
         # Apply the the pid out value depending on the command direction
         # we have received
-        if self.last_command["x"] == 1:
-            # Stay in place and rotate to left
-            self.pwm_l = self.pwm_l * (-1)
-        elif self.last_command["x"] == -1:
-            # Stay in place and rotate to the right
-            self.pwm_r = self.pwm_r * (-1)
         if self.last_command["y"] == 1:
             # Moving forward the default action
             pass
         elif self.last_command["y"] == -1:
             # Move backward
-           self.pwm_l = self.pwm_l * (-1)
-           self.pwm_r = self.pwm_r * (-1)
+            self.pwm_l = self.pwm_l * (-1)
+            self.pwm_r = self.pwm_r * (-1)
         
+        # Set motor speed
         self.motor_l.set_speed(self.pwm_l)
         self.motor_r.set_speed(self.pwm_r)
+        print(self.pwm_r)
         
         #############################
         # Command changing tampering
@@ -386,11 +481,11 @@ class Rover:
             if self.target_v_lock["n_cycles"] > 0:
                 self.target_v_lock["n_cycles"] = self.target_v_lock["n_cycles"] - 1
             
-                if self.target_v_lock["n_cycles"] == 0:
-                    self.target_v_lock["active"] = False
-                
+            if self.target_v_lock["n_cycles"] == 0:
+                self.target_v_lock["active"] = False
+                if self.target_v_lock["command"] is not None:
                     # We execute the command that we was supposed to execute
-                    self.exec_command(self.target_v_lock["command"])
+                    self.exec_command(self.target_v_lock["command"], dt)
                     self.target_v_lock["command"] = None
         
     def stop(self):
@@ -493,7 +588,7 @@ class RoverThread(threading.Thread):
             now = time.perf_counter()
             
             # Chek if we do have new command, It quiltely fast
-            self.rover.check_command()
+            self.rover.check_command(dt=cycle_duration)
             
             
             start = time.perf_counter()

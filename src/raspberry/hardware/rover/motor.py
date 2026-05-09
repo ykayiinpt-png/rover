@@ -32,9 +32,8 @@ class RMotor:
         Set the motor dutycycle value
         
         :param power: the dutycycle value to send to the motor. In case it is
-        a negative, the motor will move in the backward directtion. The value
-        will be wrapped to the limits if it is less that the minimum set or greater 
-        than the maximum set
+            a negative, the motor will move in the backward directtion. The value will be wrapped to the limits if it is less that the minimum set or greater 
+            than the maximum set
         """
 
         #return
@@ -51,7 +50,7 @@ class RMotor:
             duty_cycle = -power # On repasse en positif pour le PWM
             
         # Limitation de sécurité
-        duty_cycle = max(0, min(float(duty_cycle), 50))
+        duty_cycle = max(0, min(float(duty_cycle), self.max_power))
         self.pwm.ChangeDutyCycle(duty_cycle)
 
     def stop(self):
