@@ -61,7 +61,8 @@ class DataAckSyncMqtt(RThread):
             
             # Check if we do have data to send to the remote server
             for q in [
-                self.odometry_data_sent_queue, self.commands_send_queue, 
+                self.odometry_data_sent_queue, self.commands_send_queue,
+                self.map_data_send_queue,
                 self.ultrasound_data_sent_queue, self.imu_data_send_queue]:
                 if not q.empty():
                     data = q.get_nowait()

@@ -151,7 +151,7 @@ def main():
     
     rover = Rover(
         navigation=rover_navigation,
-        control_mode= Rover.MODE_MANUAL_NAVIGATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
+        control_mode= Rover.MODE_WAYPOINTS_NAVIGATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
         base_rotation_velocity=cfg.rover.velocity_rotate,
         shared_state=rover_shared_state,

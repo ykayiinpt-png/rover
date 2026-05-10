@@ -259,6 +259,7 @@ class WheelOdometry:
         
         # Average distance traveled by the robot
         avg_distance = (l_dist + r_dist) / 2.0
+        #avg_distance = ((l_ticks+r_ticks)/2.0) * self.right_wheel.distance_per_tick
         
         return {
             "avg_dist": avg_distance, # mm

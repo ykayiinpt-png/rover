@@ -341,7 +341,8 @@ class Rover:
         #  START DYNAMIC MOVE
         ##
         
-        base_rpm = 0 #self.base_velocity
+        base_rpm = self.base_velocity
+        rotation_rpm = 0
         now = time.perf_counter()
         
         ############################################
@@ -373,30 +374,39 @@ class Rover:
         # Waypoints Navigation control
         if self.control_mode == Rover.MODE_WAYPOINTS_NAVIGATION:
             theta_to_target, _distance, theta_error = self.navigation.get_target_heading(
-                movement["avg_dist"], np.deg2rad(self.command_theta)
+                movement["avg_dist"], self.command_theta
             )
             
-            if theta_to_target is None:
+            if self.navigation.state == Navigation.STATE_STOP:
                 # We have reached the current waypoint target
                 # so we stop
-                base_rpm = 0
-            else:
-                #self.theta_target = theta_to_target
+                self.exec_command(Rover.COMMAND_STOP)
                 
-                if theta_error == 0:
-                    # We are aligned with the target, so we move forward
-                    self.last_command = Rover.COMMAND_FORWARD
-                    base_rpm = self.base_velocity
+                # TODO: Hum find another way to wait but keeping the cycle
+                # running
+                time.sleep(1)
+                self._stopped = False
+                
+                # An we quit the update function
+                return
+            elif self.navigation.state == Navigation.STATE_MOVE_FORWARD:
+                self.last_command = Rover.COMMAND_FORWARD
+                base_rpm = self.base_velocity
+                
+                # We set the new thetha target to the command target to let
+                # our rover know that this is the current direction
+                # to follow
+                self.theta_target = self.command_theta
+            elif self.navigation.state == Navigation.STATE_ROTATE:
+                # We have correction to do by rotate the rover in place
+                if theta_error < 0:
+                    self.last_command = Rover.COMMAND_TURN_LEFT
+                elif theta_error > 0:
+                    self.last_command = Rover.COMMAND_TURN_RIGHT
                 else:
-                    # We have correction to do by rotate the rover in place
-                    if theta_error > 0:
-                        self.last_command = Rover.COMMAND_TURN_LEFT
-                    elif theta_error < 0:
-                        self.last_command = Rover.COMMAND_TURN_RIGHT
-                    else:
-                        pass
-                    
-                    base_rpm = 0
+                    pass
+                
+                base_rpm = 0
         elif self.control_mode == Rover.MODE_AUTONOMOUS_NAVIGATION:
             theta_error = wrap_angle(self.theta_target - self.command_theta, deg=True)
             pass
@@ -414,17 +424,23 @@ class Rover:
             if self.pid_angle_last_time is None:
                 self.pid_angle_last_time = now
             else:
-                if theta_error < 20:
-                    # We have to wait some time
-                    # so that the velocity can stabilize
-                    if now - self.pid_angle_last_time >= 1:
-                        omega = self.pid_angle.compute(self.theta_target, self.command_theta, theta_error)
-                        print("Error theta: ", theta_error)
-                        print("Angle Omega: ", omega)
-                        omega = clamp(omega, -int(self.base_velocity * 0.7), int(self.base_velocity * 0.7))
-                        print("Angle Omega Clamped: ", omega)
+                if self.last_command["x"] in [-1, 1]:
+                    rotation_rpm = 30 if theta_error > 0 else -30
+                    base_rpm = 0
+                    print("Fixing angle")
                 else:
-                    omega = 5 if theta_error > 0 else -5
+                    # We only apply the angle PID on certain angle error
+                    if abs(theta_error) < 20:
+                        # We have to wait some time
+                        # so that the velocity can stabilize
+                        if now - self.pid_angle_last_time >= 1:
+                            omega = self.pid_angle.compute(self.theta_target, self.command_theta, theta_error)
+                            print("Error theta: ", theta_error)
+                            print("Angle Omega: ", omega)
+                            omega = clamp(omega, -int(self.base_velocity * 0.7), int(self.base_velocity * 0.7))
+                            print("Angle Omega Clamped: ", omega)
+                    else:
+                        pass
         
         ############################################
         # Odometry
@@ -437,19 +453,16 @@ class Rover:
         #        
         # Update the target velocity
         if self.last_command["y"] == 1:
-            self.target_v_l = base_rpm + omega
-            self.target_v_r = base_rpm - omega
-        elif self.last_command["y"] == -1:
-            # Sign are inversed here because we are running backward
             self.target_v_l = base_rpm - omega
             self.target_v_r = base_rpm + omega
+        elif self.last_command["y"] == -1:
+            # Sign are inversed here because we are running backward
+            self.target_v_l = base_rpm + omega
+            self.target_v_r = base_rpm - omega
         else:
-            pass 
-        
-        # Clamp base_Velocity
-        # Important
-        if abs(self.target_v_l - self.command_v_l > 1.5*self.base_velocity) or abs(self.target_v_r - self.command_v_l) > 1.5*self.base_velocity:
-            pass
+            # TODO: review for left and
+            self.target_v_l = base_rpm - omega - rotation_rpm
+            self.target_v_r = base_rpm + omega + rotation_rpm
         
         #############################################
         # Motor PID 
