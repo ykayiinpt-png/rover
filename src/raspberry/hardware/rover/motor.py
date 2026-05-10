@@ -44,6 +44,7 @@ class RMotor:
             GPIO.output(self.in2_pin, True)
             duty_cycle = power
         else:
+            print(self.in1_pin, self.in2_pin, "N")
             # NOTE: Need the two motor to be running
             GPIO.output(self.in1_pin, True)
             GPIO.output(self.in2_pin, False)

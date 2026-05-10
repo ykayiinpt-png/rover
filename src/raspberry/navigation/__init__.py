@@ -1,6 +1,10 @@
 import collections
+from datetime import datetime, timezone
+import logging
 import math
+import multiprocessing
 import queue
+import time
 
 from src.core.utils import wrap_angle
 
@@ -12,7 +16,9 @@ class Navigation:
     and determining whether the rover has completed its path.
     """
     
-    def __init__(self, dist_threshold:float =0.1, angle_threshold:float =10):
+    def __init__(self, map_data_sent_queue: multiprocessing.Queue,
+                 dim_w: float, dim_l: float,
+                dist_threshold:float =0.1, angle_threshold:float =10,):
         """
         Initialize the Navigation object
         
@@ -30,6 +36,16 @@ class Navigation:
         self.current_wp_idx = 0
         self.dist_threshold = dist_threshold
         self.angle_threshold = angle_threshold
+        self.dim_w = dim_w
+        self.dim_l = dim_l
+        
+        self.last_batch_time = time.perf_counter()
+        self.cumul_distance = 0.0
+        
+        self.buffer = []
+        self.buffer_size = 5
+        
+        self.map_data_sent_queue = map_data_sent_queue
         
     def set_waypoints(self, waypoints: list):
         """
@@ -42,11 +58,38 @@ class Navigation:
         the rover's path.
         :param dist_threshold (float): the maximum distance error allowed around the target point
         """
-        self.waypoints = waypoints
-        self.dist_threshold = self.dist_threshold
+        self.waypoints = [[self.dim_w * x, self.dim_l * y] for x,y in waypoints]
+        print(self.waypoints)
         
         self.x = 0
         self.y = 0
+        
+        self.buffer.clear()
+        
+    def handle_batch(self):
+        self.buffer.append((self.x, self.y, self.cumul_distance))
+
+        if len(self.buffer) == self.buffer_size:
+            current_timestamp = datetime.now(timezone.utc).timestamp()
+            q_data = {
+                "topic": "slam/rover/data/navigation/position",
+                "payload": {
+                    "time": current_timestamp,
+                    "batch_dt": { "ax": 0.05, "rot": 0.05 },
+                    "x": [m[0] for m in self.buffer],
+                    "y": [m[1] for m in self.buffer],
+                    "dist": [m[2] for m in self.buffer]
+                }
+            }
+            
+            # Clear the buffer
+            self.buffer.clear()
+            
+            try:
+                self.map_data_sent_queue.put_nowait(q_data)
+            except Exception:
+                logging.exception("Error Sending Navigation data to remote")
+
         
 
     def get_target_heading(self, d_moy: float, current_angle_rad: float):
@@ -62,12 +105,17 @@ class Navigation:
             - distance: the remaining distance
             - theta_error: heading angle error from the crr
         """
+        now = time.perf_counter()
         
         if self.current_wp_idx >= len(self.waypoints):
             return None, 0
         
-        self.x += d_moy * math.cos(current_angle_rad)
-        self.y += d_moy * math.sin(current_angle_rad)
+        nx = d_moy * math.cos(current_angle_rad)
+        ny = d_moy * math.sin(current_angle_rad)
+        self.cumul_distance += math.sqrt((self.x - nx)**2 + (self.y - ny)**2)
+        
+        self.x += nx
+        self.y += ny
         
         target_x, target_y = self.waypoints[self.current_wp_idx]
         
@@ -76,6 +124,8 @@ class Navigation:
         
         distance = math.sqrt(dx**2 + dy**2)
         theta_to_target = math.degrees(math.atan2(dy, dx))
+        print("d_moy:", d_moy)
+        print("Theta to target: ", theta_to_target)
         
         # If we have reached the waypoint, we go to next
         if distance < self.dist_threshold:
@@ -86,5 +136,9 @@ class Navigation:
         theta_error = wrap_angle(theta_to_target - current_angle_rad, deg=True)
         if abs(theta_error) < self.angle_threshold:
             theta_error = 0
+            
+        if now - self.last_batch_time > 0.5:
+            self.handle_batch()
+            self.last_batch_time = now
             
         return theta_to_target, distance, theta_error

@@ -165,6 +165,7 @@ class WheelEncoder:
         self.total_ticks = 0
         self.last_delta_ticks = 0
         self.filter.reset()
+        self.velocity_filtered = 0
 
     def get_delta_and_reset(self):
         """
@@ -203,7 +204,7 @@ class WheelEncoder:
         # Backup time
         self.last_time = now
         
-        print("V_Filtered: ", self.velocity_filtered)
+        #print("V_Filtered: ", self.velocity_filtered)
         
         return delta, dist, self.velocity_filtered
 

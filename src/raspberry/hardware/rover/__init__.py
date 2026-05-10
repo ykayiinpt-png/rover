@@ -83,6 +83,7 @@ class Rover:
                 pid_angle,
                 theta_target,
                 control_mode: int,
+                navigation: Navigation,
                 pwm_bais_left=20, pwm_bais_right=20,
                 wheels_base_distance=0.10,
                 active_pid=False,
@@ -183,7 +184,7 @@ class Rover:
         #########################################
         # Navigation
         #
-        self.navigation = Navigation()
+        self.navigation = navigation
             
     def set_theta_target(self, theta):
         """
@@ -298,6 +299,12 @@ class Rover:
             self.pid_speed_l.interrupt()
             self.pid_speed_r.interrupt()
             self.pid_angle.interrupt()
+            self.odo.left_wheel.reset()
+            self.odo.right_wheel.reset()
+            self.target_v_l = 0
+            self.target_v_r = 0
+            self.pwm_l = 0
+            self.pwm_r = 0
             
             self.move_break()
             logging.info("Stop command received")
@@ -334,7 +341,7 @@ class Rover:
         #  START DYNAMIC MOVE
         ##
         
-        base_rpm = self.base_velocity
+        base_rpm = 0 #self.base_velocity
         now = time.perf_counter()
         
         ############################################
@@ -366,7 +373,7 @@ class Rover:
         # Waypoints Navigation control
         if self.control_mode == Rover.MODE_WAYPOINTS_NAVIGATION:
             theta_to_target, _distance, theta_error = self.navigation.get_target_heading(
-                movement["avg_dist"], self.command_theta
+                movement["avg_dist"], np.deg2rad(self.command_theta)
             )
             
             if theta_to_target is None:
@@ -407,14 +414,17 @@ class Rover:
             if self.pid_angle_last_time is None:
                 self.pid_angle_last_time = now
             else:
-                # We have to wait some time
-                # so that the velocity can stabilize
-                if now - self.pid_angle_last_time >= 1:
-                    omega = self.pid_angle.compute(self.theta_target, self.command_theta, theta_error)
-                    #print("Error theta: ", theta_error)
-                    #print("Angle Omega: ", omega)
-                    omega = clamp(omega, -int(self.base_velocity * 0.7), int(self.base_velocity * 0.7))
-                    #print("Angle Omega Clamped: ", omega)
+                if theta_error < 20:
+                    # We have to wait some time
+                    # so that the velocity can stabilize
+                    if now - self.pid_angle_last_time >= 1:
+                        omega = self.pid_angle.compute(self.theta_target, self.command_theta, theta_error)
+                        print("Error theta: ", theta_error)
+                        print("Angle Omega: ", omega)
+                        omega = clamp(omega, -int(self.base_velocity * 0.7), int(self.base_velocity * 0.7))
+                        print("Angle Omega Clamped: ", omega)
+                else:
+                    omega = 5 if theta_error > 0 else -5
         
         ############################################
         # Odometry
@@ -427,12 +437,12 @@ class Rover:
         #        
         # Update the target velocity
         if self.last_command["y"] == 1:
-            self.target_v_l = base_rpm - omega
-            self.target_v_r = base_rpm + omega
-        elif self.last_command["y"] == -1:
-            # Sign are inversed here because we are running backward
             self.target_v_l = base_rpm + omega
             self.target_v_r = base_rpm - omega
+        elif self.last_command["y"] == -1:
+            # Sign are inversed here because we are running backward
+            self.target_v_l = base_rpm - omega
+            self.target_v_r = base_rpm + omega
         else:
             pass 
         
@@ -457,18 +467,19 @@ class Rover:
         
         
         # Apply the the pid out value depending on the command direction
-        # we have received
-        if self.last_command["y"] == 1:
-            # Moving forward the default action
-            pass
-        elif self.last_command["y"] == -1:
-            # Move backward
-            self.pwm_l = self.pwm_l * (-1)
-            self.pwm_r = self.pwm_r * (-1)
+        # we have 
+        
+        # if self.last_command["y"] == 1:
+        #     # Moving forward the default action
+        #     pass
+        # elif self.last_command["y"] == -1:
+        #     # Move backward
+        #     self.pwm_l = self.pwm_l * (-1)
+        #     self.pwm_r = self.pwm_r * (-1)
         
         # Set motor speed
-        self.motor_l.set_speed(self.pwm_l)
-        self.motor_r.set_speed(self.pwm_r)
+        self.motor_l.set_speed(self.pwm_l * sign(self.target_v_l))
+        self.motor_r.set_speed(self.pwm_r * sign(self.target_v_r))
         print(self.pwm_r)
         
         #############################

@@ -1,6 +1,8 @@
 import logging
 import faulthandler
 import threading
+
+from src.raspberry.navigation import Navigation
 faulthandler.enable()
 
 from src.raspberry.config import Config
@@ -136,10 +138,20 @@ def main():
     )
     imu_sensor_thread_lock = threading.Lock()
     
+    # Calibrate the IMU
     imu_sensor.calibrate()
     
+    rover_navigation = Navigation(
+        map_data_sent_queue=map_data_send_queue,
+        angle_threshold=cfg.navigation.angle_threshold,
+        dist_threshold=cfg.navigation.dist_threshold,
+        dim_l=cfg.navigation.dim.l, dim_w=cfg.navigation.dim.w
+    )
+    rover_navigation.set_waypoints(cfg.navigation.waypoints)
+    
     rover = Rover(
-        control_mode=Rover.MODE_MANUAL_NAVIGATION,
+        navigation=rover_navigation,
+        control_mode= Rover.MODE_MANUAL_NAVIGATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
         base_rotation_velocity=cfg.rover.velocity_rotate,
         shared_state=rover_shared_state,
