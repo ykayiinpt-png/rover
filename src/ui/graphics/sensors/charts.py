@@ -1,3 +1,4 @@
+from collections import deque
 import logging
 import multiprocessing
 import random
@@ -62,13 +63,13 @@ class UltraSoundsCharts(QWidget):
             
         
         time_now = datetime.now(timezone.utc).timestamp()
-        self.graph_window_size = 200
-        self.time = np.array([time_now - i for i in range(self.graph_window_size)])
+        self.maxlen = 200
+        self.x_time = deque([time_now - i for i in range(self.maxlen)], maxlen=self.maxlen)
         self.distances = {
-            "f": np.zeros(self.graph_window_size),
-            "b": np.zeros(self.graph_window_size),
-            "l": np.zeros(self.graph_window_size),
-            "r": np.zeros(self.graph_window_size),
+            "f": deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen),
+            "b": deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen),
+            "l": deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen),
+            "r": deque(np.zeros(shape=self.maxlen), maxlen=self.maxlen),
         }
         
         # Get a line reference
@@ -76,7 +77,7 @@ class UltraSoundsCharts(QWidget):
         
         for k in ["f", "b", "l", "r"]:
             self.lines[k] = self.plot_graphs[k].plot(
-                self.time,
+                self.x_time,
                 self.distances[k],
                 pen=self.pens[k],
                 symbol="+",
@@ -89,9 +90,7 @@ class UltraSoundsCharts(QWidget):
         # Values views
         self.ultrasound_values_label = QLabel(text=self.format_data_to_str(0, 0, 0, 0))
         layout.addWidget(self.ultrasound_values_label)
-        
-        # 
-        
+
         self.setLayout(layout)
         
         # Add a timer to simulate new temperature measurements
@@ -106,51 +105,36 @@ class UltraSoundsCharts(QWidget):
         
         
     def slot_update_plot(self):
-        self.time = np.roll(self.time, -1)
-        self.time[-1] = self.time[-2] + 1
+        """
+        @eprecated
+        """
+        pass
+    
+        # self.time = np.roll(self.time, -1)
+        # self.time[-1] = self.time[-2] + 1
         
-        for k in ["f", "b", "l", "r"]:
-            self.distances[k] = np.roll(self.distances[k], -1)
-            self.distances[k][-1] = random.randint(0, 100)
+        # for k in ["f", "b", "l", "r"]:
+        #     self.distances[k] = np.roll(self.distances[k], -1)
+        #     self.distances[k][-1] = random.randint(0, 100)
             
-            self.lines[k].setData(self.time, self.distances[k])
+        #     self.lines[k].setData(self.time, self.distances[k])
             
-        self.ultrasound_values_label.setText(
-            self.format_data_to_str(
-                self.distances["f"][-1],
-                self.distances["b"][-1],
-                self.distances["l"][-1],
-                self.distances["r"][-1])
-        )
+        # self.ultrasound_values_label.setText(
+        #     self.format_data_to_str(
+        #         self.distances["f"][-1],
+        #         self.distances["b"][-1],
+        #         self.distances["l"][-1],
+        #         self.distances["r"][-1])
+        # )
         
     def update_charts(self, dict_arr):
         with self.draw_lock:
-            # Update the time array
-            if len(dict_arr["f"]) >= self.graph_window_size:
-                #self.time = [ dict_arr["time"] + i * dict_arr["batch_dt"]["u"] for i in range(self.graph_window_size)]
-                
-                self.time = [ datetime.now(timezone.utc).timestamp() - i * dict_arr["batch_dt"]["u"] for i in range(self.graph_window_size)]
-                self.time = reversed(self.time)
-            else:
-                l = len(dict_arr["f"])
-                #self.time = np.roll(self.time, len(dict_arr["f"]))
-                #self.time[-1] = self.time[-1] + dict_arr["batch_dt"]["u"]
-                
-                self.time[:-l] = self.time[l:]
-                self.time[-l:] = self.time[-l-1] + np.arange(1, l+1) * dict_arr["batch_dt"]["u"]
+            self.x_time.extend(self.x_time[-1] +  np.arange(1, len(dict_arr["f"])+1) * dict_arr["batch_dt"]["u"])
             
-            # Update sensors data plot
+            # Plot
             for k in ["f", "b", "l", "r"]:
-                l = len(dict_arr[k])
-                if l >= self.graph_window_size:
-                    self.distances[k][:] = dict_arr[k][-self.window_size:]
-                else:
-                    self.distances[k][:-l] = self.distances[k][l:]
-                    self.distances[k][-l:] = dict_arr[k]
-                    
-                #print("After Cropped", len(self.distances[k]))
-                
-                self.lines[k].setData(self.time, self.distances[k])
+                self.distances[k].extend(dict_arr[k])
+                self.lines[k].setData(self.x_time, self.distances[k])
         
             self.ultrasound_values_label.setText(
                 self.format_data_to_str(

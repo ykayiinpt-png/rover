@@ -32,9 +32,12 @@ class ZRotationWidget(pg.GraphicsLayoutWidget):
         self.y_arc = np.sin(theta)
         self.plot.plot(self.x_arc, self.y_arc, pen=pg.mkPen(width=2))
 
-        # aiguilles
-        self.needle1 = self.plot.plot([0, 1], [0, 0], pen=pg.mkPen('r', width=3))
+        # Needles
+        self.needle1 = self.plot.plot([0, 1], [0, 0], pen=pg.mkPen('g', width=3))
         self.needle2 = self.plot.plot([0, 1], [0, 0], pen=pg.mkPen('y', width=3))
+        
+        # Main origin
+        self.plot.plot([0, 0], [0, 1], pen=pg.mkPen('w', width=3))
 
         self.label = pg.TextItem("", anchor=(0.5, 0))
         self.plot.addItem(self.label)
@@ -161,7 +164,7 @@ class RobotVelocityStateWidget(QWidget):
         self.theta_plot2 = pg.PlotWidget(title="Z-Theta")
         self.theta_plot2.setFixedWidth(400)
         self.theta_plot2.setFixedHeight(250)
-        self.theta_plot2.setLabel("left", "rad", **styles)
+        self.theta_plot2.setLabel("left", "deg/s", **styles)
         self.theta_plot2.setLabel("bottom", "time", **styles)
         self.theta_plot2.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
         self.theta_plot2.setBackground("#1E1E1E")
