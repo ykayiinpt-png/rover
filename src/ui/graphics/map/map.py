@@ -417,10 +417,13 @@ class MapWidget(QWidget):
         self.plot.setBackground("w")
         self.plot.showGrid(x=True, y=True)
         self.plot.setMouseEnabled(x=True, y=True)
+        self.plot.hideAxis('bottom')
+        self.plot.hideAxis('left')
+        self.plot.addLegend()
 
         # Paths (equivalent to your polyline)
-        self.path_curve = self.plot.plot(pen=pg.mkPen('k', width=2))
-        self.ekf_curve = self.plot.plot(pen=pg.mkPen('b', width=2))
+        self.path_curve = self.plot.plot(pen=pg.mkPen('k', width=2), name="Odometry")
+        self.ekf_curve = self.plot.plot(pen=pg.mkPen('b', width=2), name="EKF")
 
         # Robot markers (fast scatter)
         self.robot_scatter = pg.ScatterPlotItem(
@@ -438,6 +441,7 @@ class MapWidget(QWidget):
 
         # ---------------- LAYOUT ----------------
         layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.plot)
         self.setLayout(layout)
 
@@ -552,7 +556,7 @@ class MapControlWidget(QWidget):
         self.map_widget.clear_robot_path()
         
     def stop(self):
-        pass
+        self.map_widget.stop()
 
 
 class MapGridWidget(QWidget):
