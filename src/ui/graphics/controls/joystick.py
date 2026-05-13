@@ -141,7 +141,7 @@ class KeyboardJoystickWidget(QWidget):
         })
 
         direction = f"x={x:.2f}, y={y:.2f}"
-        print(direction)
+        #print(direction)
         self.directionChanged.emit(direction)
 
     # ---------- DRAW UI ----------

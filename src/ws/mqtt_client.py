@@ -114,16 +114,16 @@ class MqttClient:
             while not self.stop_event.is_set():
                 try:
                     msg = await iterator.__anext__() # timeout=self.recv_timeout)
-                    print("[MQTT] message received:", msg,)
-                    print("[MQTT] Type of message:", type(msg))
-                    print("[MQTT] message received:", msg.payload)
-                    print("[MQTT] message received topic:", msg.topic)
+                    #print("[MQTT] message received:", msg,)
+                    #print("[MQTT] Type of message:", type(msg))
+                    #print("[MQTT] message received:", msg.payload)
+                    #print("[MQTT] message received topic:", msg.topic)
                     
                     data = ast.literal_eval(msg.payload.decode('utf-8'))
                     
                     # TODO: send back to thread
                     await self.queue_bridge.push_from_coroutin({"topic": str(msg.topic), "data": data})
-                    print("Data sent to queue")
+                    #print("Data sent to queue")
                     
                     await asyncio.sleep(0.001)
                 except asyncio.TimeoutError:

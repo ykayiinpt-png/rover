@@ -6,11 +6,11 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QToolBar, QVBoxLayout, QWidget
 
 from src.ui.detection import DetectionWidget
-from src.ui.graphics.map.map_navigation import MapNavigationDialog, MapNavigationWidget
+from src.ui.graphics.map.navigation import MapNavigationDialog, MapNavigationWidget
 from src.ui.graphics.controls.joystick import KeyboardJoystickDialog
 from src.ui.graphics.rover_state.velocity import RobotVelocityStateWidget
 from src.ui.log import LogWidget
-from src.ui.graphics.map.map import MapWidget
+from src.ui.graphics.map.map import MapControlWidget, MapGridWidget, MapWidget
 from src.ui.graphics.sensors.charts import SensorCharts
 from src.ui.menus import AccquisitionMenuSensorsParameters
 from src.ui.sidebar import Sidebar
@@ -23,7 +23,8 @@ class MainWindow(QMainWindow):
                 sensors_ultrasound_data_queue: multiprocessing.Queue,
                 sensors_imu_data_queue: multiprocessing.Queue,
                 odometry_data_queue: multiprocessing.Queue,
-                map_data_queue: multiprocessing.Queue,
+                map_receive_data_queue: multiprocessing.Queue,
+                mapping_state_receive_data_queue: multiprocessing.Queue,
                 command_sent_data_queue: multiprocessing.Queue,
                 command_receive_data_queue: multiprocessing.Queue):
         super().__init__()
@@ -56,15 +57,17 @@ class MainWindow(QMainWindow):
         layout_c = QVBoxLayout()
         layout_cb = QHBoxLayout()
         
-        self.map_preview_widget = MapWidget()
-        layout_map_widget = QVBoxLayout()
-        layout_map_widget.addSpacing(10)
-        layout_map_widget.addWidget(QLabel(text="Map"))
-        layout_map_widget.addSpacing(3)
-        layout_map_widget.addWidget(self.map_preview_widget)
+        # Map
+        self.map_preview_widget = MapControlWidget(
+            map_data_queue=map_receive_data_queue,
+            mapping_state_receive_data_queue=mapping_state_receive_data_queue,
+            path_max_size=2000
+        )
+        layout_c.addWidget(self.map_preview_widget)
         
-        layout_c.addLayout(layout_map_widget)
+        self.grid_map = MapGridWidget()
         
+        # Object Detection
         self.detection_objecs_widget =  DetectionWidget()
         layout_do_widget = QVBoxLayout()
         layout_do_widget.addWidget(QLabel(text="Objects"))
@@ -147,9 +150,18 @@ class MainWindow(QMainWindow):
         We stop Process here
         """
         logging.info("Closing Application UI")
+        
+        if self.keyboard_joystick_dialog.isVisible():
+            self.keyboard_joystick_dialog.hide()
+                
+        if self.rover_state_velocity.isVisible():
+            self.rover_state_velocity.hide()
+            
+            
         self.rtc_track_widget.stop()
         self.sensors_chart.stop()
         self.rover_state_velocity.stop()
+        self.map_preview_widget.stop()
         
         event.accept()
         
@@ -188,11 +200,11 @@ class MainWindow(QMainWindow):
         
     
     def slop_map_menu_open_full_map(self):
-        map_navig = MapNavigationDialog()
+        map_navig = MapNavigationDialog(grid_map=self.grid_map, pos_map=self.map_preview_widget)
         map_navig.exec()
         
     def slop_map_menu_open_joystick(self):
-        if self.keyboard_joystick_dialog is not None:
+        if not self.keyboard_joystick_dialog.isVisible():
             self.keyboard_joystick_dialog.show()
             
     def slot_menu_acq_rstate_velocity(self):

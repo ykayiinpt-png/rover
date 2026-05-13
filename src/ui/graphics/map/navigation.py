@@ -4,12 +4,11 @@ from PyQt6.QtWidgets import QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel, QLi
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPainter, QColor, QPen, QImage
 
-from src.ui.graphics.map.map import MapWidget
-from src.ui.graphics.map.map_grid import MapGridWidget
+from src.ui.graphics.map.map import MapGridWidget, MapControlWidget
 
 
 class MapNavigationDialog(QDialog):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, pos_map: MapControlWidget, grid_map: MapGridWidget, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         self.setWindowTitle("Acquisition - Sensors Parameters")
@@ -17,7 +16,7 @@ class MapNavigationDialog(QDialog):
         
         main_layout = QVBoxLayout()
         
-        map = MapNavigationWidget()
+        map = MapNavigationWidget(pos_map=pos_map, grid_map=grid_map)
         main_layout.addWidget(map)
         
         
@@ -31,15 +30,13 @@ class MapNavigationWidget(QWidget):
     panel at the left
     """
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, pos_map: MapControlWidget, grid_map: MapGridWidget,  *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         layout = QHBoxLayout()
         
         # Maps
         map_layout = QVBoxLayout()
-        pos_map = MapWidget()
-        grid_map = MapGridWidget()
         
         map_layout.addWidget(pos_map)
         map_layout.addSpacing(10)

@@ -83,7 +83,7 @@ class StateVelocityContorller(QThread):
             # Handle Imu data
             if not self.imu_data_queue.empty():
                 data = self.imu_data_queue.get()
-                print("Data in IMU velocity Widget: ", data)
+                #print("Data in IMU velocity Widget: ", data)
                 
                 if type(data) is dict:
                     for k in data.keys():

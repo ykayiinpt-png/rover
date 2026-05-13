@@ -30,7 +30,8 @@ logging.basicConfig(
 
 def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
     video_frame_compute_result_queue = None
-    map_data_queue = None
+    map_receive_data_queue = None
+    mapping_state_receive_data_queue = None
     sensors_ultrasound_data_queue = None
     sensors_imu_data_queue = None
     odometry_data_queue = None
@@ -48,7 +49,8 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
     try:
         # Queus
         video_frame_compute_result_queue = multiprocessing.Queue(maxsize=1000)
-        map_data_queue = multiprocessing.Queue(maxsize=1000)
+        map_receive_data_queue = multiprocessing.Queue(maxsize=1000)
+        mapping_state_receive_data_queue = multiprocessing.Queue(maxsize=1000)
         sensors_ultrasound_data_queue = multiprocessing.Queue(maxsize=1000)
         sensors_imu_data_queue=multiprocessing.Queue(maxsize=1000)
         odometry_data_queue = multiprocessing.Queue(maxsize=1000)
@@ -64,8 +66,11 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
             # Video streaming queue
             video_frame_compute_result_queue=video_frame_compute_result_queue,
             
-            # Sensors data queues,
-            map_data_queue=map_data_queue,
+            # Map data queues,
+            map_receive_data_queue=map_receive_data_queue,
+            mapping_state_receive_data_queue=mapping_state_receive_data_queue,
+            
+            # Sensor data queues
             sensors_ultrasound_data_queue=sensors_ultrasound_data_queue,
             sensors_imu_data_queue=sensors_imu_data_queue,
             odometry_data_queue=odometry_data_queue,
@@ -93,7 +98,8 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         if "data" in features:
             raspberry_data_process = RaspberryDataExchangeProcess(
                 host=mqtt_host, port=mqtt_port,
-                map_data_queue=map_data_queue,
+                map_receive_data_queue=map_receive_data_queue,
+                mapping_state_receive_data_queue=mapping_state_receive_data_queue,
                 sensors_ultrasound_data_queue=sensors_ultrasound_data_queue,
                 sensors_imu_data_queue=sensors_imu_data_queue,
                 odometry_data_queue=odometry_data_queue
@@ -121,7 +127,9 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         video_frame_compute_result_queue.close()
         video_frame_compute_result_queue.join_thread()
         
-        map_data_queue.close()
+        map_receive_data_queue.close()
+        mapping_state_receive_data_queue.close()
+        
         sensors_ultrasound_data_queue.close()
         sensors_imu_data_queue.close()
         odometry_data_queue.close()
@@ -129,7 +137,9 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         sensors_ultrasound_data_queue.join_thread()
         sensors_imu_data_queue.join_thread()
         odometry_data_queue.join_thread()
-        map_data_queue.join_thread()
+        
+        map_receive_data_queue.join_thread()
+        mapping_state_receive_data_queue.join_thread()
         
         
         commands_send_queue.close()
