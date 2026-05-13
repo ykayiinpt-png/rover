@@ -1,4 +1,6 @@
 import faulthandler
+
+from src.raspberry.hardware.exploration import ExplorationPlanner
 faulthandler.enable()
 
 
@@ -99,24 +101,24 @@ def main():
     sonar_array=UltrasoundSensorArray(
         sensors_config=[
             {
-                'name': cfg.ultra_sounds.back.name,  "key": cfg.ultra_sounds.back.key,
-                'trig': cfg.ultra_sounds.back.gpio.trig, 'echo': cfg.ultra_sounds.back.gpio.echo,
-                "angle_offset": np.pi
-            },
-            {
                 'name': cfg.ultra_sounds.front.name,  "key": cfg.ultra_sounds.front.key,
                 'trig': cfg.ultra_sounds.front.gpio.trig, 'echo': cfg.ultra_sounds.front.gpio.echo,
+                "angle_offset":  np.pi
+            },
+            {
+                'name': cfg.ultra_sounds.back.name,  "key": cfg.ultra_sounds.back.key,
+                'trig': cfg.ultra_sounds.back.gpio.trig, 'echo': cfg.ultra_sounds.back.gpio.echo,
                 "angle_offset": 0
             },
             {
                 'name': cfg.ultra_sounds.left.name,  "key": cfg.ultra_sounds.left.key,
                 'trig': cfg.ultra_sounds.left.gpio.trig, 'echo': cfg.ultra_sounds.left.gpio.echo,
-                "angle_offset": np.pi/2
+                "angle_offset": -np.pi/2
             },
             {
                 'name': cfg.ultra_sounds.right.name,  "key": cfg.ultra_sounds.right.key,
                 'trig': cfg.ultra_sounds.right.gpio.trig, 'echo': cfg.ultra_sounds.right.gpio.echo,
-                "angle_offset": -np.pi/2
+                "angle_offset": np.pi/2
             },
             #{'name': 'Front', "key": "u_f", 'trig': 20, 'echo': 21},
             #{'name': 'Right', "key": "u_r", 'trig': 26, 'echo': 7}, # NOTE: Have to disable SPI in order to add interruption to the pin 7 an SPI PIN
@@ -162,6 +164,7 @@ def main():
     # Calibrate the IMU
     imu_sensor.calibrate()
     
+    # The nabigation
     rover_navigation = Navigation(
         shared_state=navigation_shared_state,
         map_data_sent_queue=map_data_send_queue,
@@ -170,15 +173,26 @@ def main():
         dim_l=cfg.navigation.dim.l, dim_w=cfg.navigation.dim.w
     )
     
-    rover_navigation.set_waypoints(cfg.navigation.waypoints)
+    if cfg.navigation.waypoint.run:
+        rover_navigation.set_waypoints(cfg.navigation.waypoint.items)
+    
+    # The explorer Planner
+    rover_explorer = ExplorationPlanner(
+        safe_avoid_angle=cfg.exploration.angle_threshold,
+        safe_distance=cfg.exploration.dist_threshold,
+        rover_shared_state=rover_shared_state,
+        mapping_shared_state=mapping_shared_state,
+        navigation_shared_state=navigation_shared_state,
+    )
     
     # Mapping Process
     ekf = KalmanMapping(dt=None)
     occupancy_grid = OccupancyMap(
-        width_m=cfg.mapping.width,
-        height_m=cfg.mapping.width,
-        resolution=cfg.mapping.resolution,
-        save_grid_to_file=cfg.mapping.occupancy_grid.save_file
+        width_m=cfg.mapping.occupancy_grid.width,
+        height_m=cfg.mapping.occupancy_grid.width,
+        resolution_x=cfg.mapping.occupancy_grid.resolution.x,
+        resolution_y=cfg.mapping.occupancy_grid.resolution.y,
+        save_grid_to_file=cfg.mapping.occupancy_grid.save_file_on_stop
     )
     rover_mapping_process =  MappingProcess(
         ekf=ekf, occupacy_grid=occupancy_grid,
@@ -190,9 +204,11 @@ def main():
     
     rover = Rover(
         navigation=rover_navigation,
-        control_mode= Rover.MODE_WAYPOINTS_NAVIGATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
+        explorer=rover_explorer,
+        control_mode= Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
         base_rotation_velocity=cfg.rover.velocity_rotate,
+        swivel_velocity_pwm=cfg.rover.swivel_velocity_pwm,
         shared_state=rover_shared_state,
         odo= odometry,
         
@@ -320,7 +336,6 @@ def main():
         if cfg.mapping.enabled:
             try:
                 if rover_mapping_process is not None and rover_mapping_process.is_alive():
-                    rover_mapping_process.stop()
                     rover_mapping_process.terminate()
                     rover_mapping_process.join(timeout=5)
 

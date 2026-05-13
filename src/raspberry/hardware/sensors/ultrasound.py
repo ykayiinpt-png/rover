@@ -23,7 +23,8 @@ class UltrasoundSensor:
     Object Wrapping for ultrasound sensor
     """
     
-    def __init__(self, name, key: str, trig_pin: int, echo_pin: int):
+    def __init__(self, name, key: str, trig_pin: int, echo_pin: int,
+                 trig_echo_time=0.0045, max_distance=1.5):
         self.name = name
         self.key = key
         
@@ -31,6 +32,9 @@ class UltrasoundSensor:
         
         self.trig_pin = trig_pin
         self.echo_pin = echo_pin
+        
+        self.trig_echo_time = trig_echo_time
+        self.max_distance = max_distance
         
         self.start_time = 0
         self.end_time = 0
@@ -45,7 +49,7 @@ class UltrasoundSensor:
         GPIO.add_event_detect(self.echo_pin, GPIO.BOTH, callback=self._echo_callback)
         
         # Filter
-        self.filter = UltrasoundSensorFilter()
+        self.filter = UltrasoundSensorFilter(window_size=10)
 
     def _echo_callback(self, channel):
         """Handler for echo response"""
@@ -68,12 +72,12 @@ class UltrasoundSensor:
         """Send pulses and wait to compute the mesure"""
         self.new_data_available = False
         GPIO.output(self.trig_pin, True)
-        time.sleep(0.00001)  # 10 microseconds (As defined in the documentation)
+        time.sleep(self.trig_echo_time)  # 10 microseconds (As defined in the documentation)
         GPIO.output(self.trig_pin, False)
 
     def get_distance(self):
         # We use the min around 3 meter to avoid noise
-        return min(round(self.filter.add_and_get(self.distance), 2), 3)
+        return min(round(self.filter.add_and_get(self.distance), 2), self.max_distance)
     
     def stop(self):
         """
@@ -119,11 +123,14 @@ class UltrasoundSensorArray:
         
         Update all main components state shared state
         """
-        for sensor in self.sensors:
+        for i, sensor in enumerate(self.sensors):
+            #if i == 0:
             sensor.trigger()
             # We wait for the trigger to finish (max 30ms for ~5m)
-            time.sleep(0.03) 
+            time.sleep(0.003) 
             self.last_scan_data[sensor.key] = sensor.get_distance()
+            #else:
+                #self.last_scan_data[sensor.key] = 
             
         # TODO: to be removed
         ##print("Ultrasound (m)", self.last_scan_data)
