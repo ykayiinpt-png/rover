@@ -1,5 +1,24 @@
 from scipy.signal import butter, lfilter_zi, lfilter
 
+
+class LowPassFilter1Order:
+    """
+    A complementary filter type to
+    apply on on IMU sensor. Basically it will be used
+    on the Z-axis rotation
+    """
+    
+    def __init__(self, alpha=0.2): # Alpha proche de 0 = filtrage fort
+        self.alpha = alpha
+        self.filtered_val = 0
+
+    def filter(self, new_val):
+        self.filtered_val = (self.alpha * new_val) + ((1 - self.alpha) * self.filtered_val)
+        return self.filtered_val
+    
+    def reset(self):
+        self.filtered_val = 0
+
 class LowPassFilter2ndOrder:
     """
     Filtre passe-bas IIR numérique 2ème ordre réutilisable.

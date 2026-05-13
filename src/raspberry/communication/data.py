@@ -4,7 +4,9 @@ import multiprocessing
 
 
 import logging
+from multiprocessing.managers import DictProxy
 import time
+from typing import Any
 
 
 from src.threads import RThread
@@ -20,12 +22,15 @@ class DataAckSyncMqtt(RThread):
     """
     
     def __init__(self,
+                rover_shared_state: DictProxy,
+                rover_shared_state_command_lock: Any, #multiprocessing.synchronize.Lock,
                 ultrasound_data_sent_queue: multiprocessing.Queue,
                 imu_data_send_queue: multiprocessing.Queue,
                 odometry_data_sent_queue: multiprocessing.Queue,
                 commands_send_queue: multiprocessing.Queue,
                 commands_receive_queue: multiprocessing.Queue,
-                map_data_send_queue: multiprocessing.Queue):
+                map_data_send_queue: multiprocessing.Queue,
+                mapping_position_data_sent_queue: multiprocessing.Queue):
         super().__init__()
         
         self.counter = 0
@@ -36,6 +41,10 @@ class DataAckSyncMqtt(RThread):
         self.commands_send_queue = commands_send_queue
         self.commands_receive_queue = commands_receive_queue
         self.map_data_send_queue = map_data_send_queue
+        self.mapping_position_data_sent_queue = mapping_position_data_sent_queue
+        
+        self.rover_shared_state = rover_shared_state
+        self.rover_shared_state_command_lock = rover_shared_state_command_lock
         
     def run(self):
         while not self.stop_event.is_set():
@@ -43,15 +52,19 @@ class DataAckSyncMqtt(RThread):
             if not self.queue_bridge.q_sync.empty():
                 payload = self.queue_bridge.q_sync.get_nowait()
                 #print("Data from remote server")
-                ##print(payload)
-                ##print(type(payload))
+                print(payload)
+                print(type(payload))
                 
-                # Check topic and data back to the
-                # slam/rover/commands/remote
+                if payload.get("topic") is not None and payload.get("data") is not None:
+                    if payload.get("topic") == "slam/rover/commands/remote":
+                        with self.rover_shared_state_command_lock:
+                            self.rover_shared_state["remote_command"] = payload.get("data")
+                        #self.commands_receive_queue.put(payload.get("data"))
             
             # Check if we do have data to send to the remote server
             for q in [
-                self.odometry_data_sent_queue, self.commands_send_queue, 
+                self.odometry_data_sent_queue, self.commands_send_queue,
+                self.map_data_send_queue, self.mapping_position_data_sent_queue,
                 self.ultrasound_data_sent_queue, self.imu_data_send_queue]:
                 if not q.empty():
                     data = q.get_nowait()
@@ -63,7 +76,7 @@ class DataAckSyncMqtt(RThread):
                         "payload": data.get("payload")
                     })
             
-            time.sleep(0.001)
+            #time.sleep(0.001)
         
         logging.info("Thread stop event up")
         

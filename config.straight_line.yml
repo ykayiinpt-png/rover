@@ -20,15 +20,15 @@ imu:
 
 ultra_sounds:
     freq: 0
-    back:
-        name: "Back"
-        key: "u_b"
-        gpio:
-            trig: 16
-            echo: 19
     front:
         name: "Front"
         key: "u_f"
+        gpio:
+            trig: 16
+            echo: 19
+    back:
+        name: "Back"
+        key: "u_b"
         gpio:
             trig: 20
             echo: 21
@@ -50,8 +50,10 @@ ultra_sounds:
 ###########################################
 rover:
     freq: 20 # 20 Hz
-    velocity: 120 #147 # 147 RPM = 0.5 m/s
+    velocity: 200 #147 # 147 RPM = 0.5 m/s
+    velocity_rotate: 5 # 20 degree per second
     enable_pid: true
+    enable_angle_pid: true
     odometry:
         wheels_base_distance: 0.10 # m, 10cm --> 0.10 m
         left_wheel:
@@ -61,8 +63,8 @@ rover:
             ticks_per_rev: 20
             wheel_diameter: 0.065 # 0.065m -> 6.5cm
             min_ticks_delta: 2
-            lpf_1_alpha: 0.8
-            window_filter_size: 2
+            lpf_1_alpha: 0.85
+            window_filter_size: 0
         right_wheel:
             name: "Right"
             gpio:
@@ -71,55 +73,57 @@ rover:
             wheel_diameter: 0.065 # 0.065m -> 6.5cm
             min_ticks_delta: 2
             lpf_1_alpha: 0.8
-            window_filter_size: 2
+            window_filter_size: 0
     angle:
         straight:
             # the width line orientation in compraison to the IMU axis
             ref: 0.0
             pid:
-                kp: 0.5
-                ki: 0.0
-                kd: 0.0
+                kp: 3
+                ki: 0.05
+                kd: 3
     motor_left:
         pwm: 100 # 100 Hz
-        max_power: 70
+        max_power: 90
         duty_cycle:
-            bais: 10
+            bais: 15
         gpio:
             in1: 22
             in2: 23
             pwm: 13
         pid:
-            #kp: 0
-            #ki: 0
-            #kd: 0
+            max_integral: 1500
+            kp: 0
+            ki: 0
+            kd: 0
             #kp: 0.11
             #ki: 0.01
             #kd: 0.01
-            kp: 0.1
-            ki: 0.0
+            kp: 0.05
+            ki: 0.001
             kd: 0.0
             #kp: 4.1
             #ki: 0.9
             #kd: 0
     motor_right:
         pwm: 100 # 100 Hz
-        max_power: 70
+        max_power: 90
         duty_cycle:
-            bais: 12
+            bais: 16
         gpio:
             in1: 17
             in2: 27
             pwm: 12
         pid:
+            max_integral: 1500
             #kp: 29
             #ki: 0.0 #0.1
             #kd: 0
             #kp: 0.11
             #ki: 0.01
             #kd: 0.01
-            kp: 0.15
-            ki: 0.0
+            kp: 0.03
+            ki: 0.0009
             kd: 0.0
             #kp: 0.0
             #ki: 0.0

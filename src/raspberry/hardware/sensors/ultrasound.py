@@ -7,6 +7,8 @@ import RPi.GPIO as GPIO
 from collections import deque
 import statistics
 
+from src.core.shared import MemorySharedDict
+
 class UltrasoundSensorFilter:
     def __init__(self, window_size=5):
         self.history = deque(maxlen=window_size)
@@ -81,23 +83,41 @@ class UltrasoundSensor:
             GPIO.remove_event_detect(self.echo_pin)
             
             GPIO.output(self.trig_pin, False)
-            #print(f"Capteur {self.name} arrêté proprement.")
+            print(f"Capteur {self.name} arrêté proprement.")
         except Exception as e:
             logging.exception("")
             #print(f"Erreur lors de l'arrêt de {self.name}: {e}")
     
     
 class UltrasoundSensorArray:
-    def __init__(self, sensors_config: list[dict[str, Any]]):
+    def __init__(self, sensors_config: list[dict[str, Any]],
+                rover_shared_state: MemorySharedDict, 
+                mapping_shared_state: MemorySharedDict,
+                navigation_shared_state: MemorySharedDict):
         self.sensors = [
             UltrasoundSensor(cfg['name'], cfg['key'], cfg['trig'], cfg['echo']) 
             for cfg in sensors_config
         ]
         self.last_scan_data = {}
+        
+        self.rover_shared_state = rover_shared_state
+        self.mapping_shared_state = mapping_shared_state
+        self.navigation_shared_state = navigation_shared_state
+        
+        
+        sensors_angle_offset = {}
+        for cfg in sensors_config:
+            sensors_angle_offset[cfg['key']] = cfg['angle_offset']
+        
+        self.rover_shared_state["ultra_sound_angle_offsets"] = sensors_angle_offset
+        self.mapping_shared_state["ultra_sound_angle_offsets"] = sensors_angle_offset
+        self.navigation_shared_state["ultra_sound_angle_offsets"] = sensors_angle_offset
 
     def scan_sequence(self):
         """
         Execute a sequential reading of the sensors
+        
+        Update all main components state shared state
         """
         for sensor in self.sensors:
             sensor.trigger()
@@ -107,6 +127,10 @@ class UltrasoundSensorArray:
             
         # TODO: to be removed
         ##print("Ultrasound (m)", self.last_scan_data)
+        
+        self.rover_shared_state["ultra_sound_dists"] = self.last_scan_data
+        self.mapping_shared_state["ultra_sound_dists"] = self.last_scan_data
+        self.navigation_shared_state["ultra_sound_dists"] = self.last_scan_data
         
         return self.last_scan_data
     

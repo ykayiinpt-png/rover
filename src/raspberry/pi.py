@@ -1,8 +1,14 @@
 import logging
 import multiprocessing
-import random
+import threading
 import time
-from datetime import datetime, timezone
+import numpy as np
+
+from src.core.shared import MemorySharedDict
+from src.raspberry.hardware.rover import Rover, RoverThread
+from src.raspberry.hardware.sensors.imu import IMUSensor
+from src.raspberry.hardware.sensors.ultrasound import UltrasoundSensorArray
+from src.raspberry.hardware.thread import IMUThread, UltrasoundThread
 
 class RaspberryPi:
     """
@@ -11,61 +17,89 @@ class RaspberryPi:
     Implements 
     """
     
-    def __init__(self, send_queue: multiprocessing.Queue, receive_queue: multiprocessing.Queue):
-        self.send_queue = send_queue
-        self.receive_queue = receive_queue
+    def __init__(self, rover: Rover, sonars_arr_obj: UltrasoundSensorArray,
+                imu: IMUSensor, imu_sensor_thread_lock: threading.Lock,
+                ultrasound_data_sent_queue: multiprocessing.Queue,
+                imu_data_send_queue: multiprocessing.Queue,
+                odometry_data_sent_queue: multiprocessing.Queue,
+                commands_send_queue: multiprocessing.Queue,
+                commands_receive_queue: multiprocessing.Queue,
+                map_data_send_queue: multiprocessing.Queue,
+                
+                rover_shared_state: MemorySharedDict, 
+                mapping_shared_state: MemorySharedDict,
+                navigation_shared_state: MemorySharedDict):
         
-        self.stop_event = multiprocessing.Event()
-    
+        #state
+        self.rover_shared_state = rover_shared_state
+        self.mapping_shared_state = mapping_shared_state
+        self.navigation_shared_state = navigation_shared_state
+        
+        #Attrs
+        self.sonars = sonars_arr_obj
+        self.imu = imu
+        
+        # We assume that we have a square of 8m x 8m to map
+        # TODO: later we will handle the over sizing
+        self.square_size = 8.0
+        
+        # Threads
+        self.ultra_sound_thread = UltrasoundThread(
+            sonars_arr=sonars_arr_obj,
+            send_queue=ultrasound_data_sent_queue
+        )
+        
+        self.imu_thread = IMUThread(
+            sensor_hw=imu,
+            lock=imu_sensor_thread_lock,
+            imu_data_send_queue=imu_data_send_queue,
+            rover_shared_state=self.rover_shared_state, 
+            mapping_shared_state=self.mapping_shared_state,
+            navigation_shared_state=self.navigation_shared_state
+        )
+        
+        self.rover_thread = RoverThread(
+            rover=rover,
+            odometry_data_sent_queue=odometry_data_sent_queue,
+        )
+        
+        self.running = True
+
+    def start_all(self):
+        # Calibration obligatoire au démarrage (Robot immobile)
+        self.imu.calibrate(samples=100)
+        
+        # Lancement des threads
+        logging.info("[RaspberryPI] Démarrage de la boucle principale...")
+        self.ultra_sound_thread.start()
+        logging.info("[RaspberryPI] Robot Controller: Ultrasound thread started")
+        self.imu_thread.start()
+        logging.info("[RaspberryPI] Robot Controller: Imu thread has started")
+        self.rover_thread.start()
+        logging.info("[RaspberryPI] Robot Controller: Rover Thread thread started")
+        
+        #self.rover_thread.rover.move(0.5, 0)
+
     def run(self):
-        while not self.stop_event.is_set():
-            current_timestamp = datetime.now(timezone.utc).timestamp()
-            # 1. Acquire data from GPIO
-            # 2. Apply filters
-            # 3. Push data to remote server (scheduling with queue)
-            
-            data = {
-                "topic": "slam/sensors/data",
-                "payload": {
-                    # The start time of the data acquisition
-                    "time": current_timestamp,
-                    
-                    # For each type or category of sensors we do have
-                    # different acquition frequency. So the batch_dt
-                    # the difference in secons between two acquisitions
-                    # u is ofr ultration g is gyroscope
-                    # It will be used in case we do have array
-                    "batch_dt": {"u": 1},
-                    # Ultrasound
-                    "u_f": random.random() * 100,
-                    "u_b": random.random() * 100,
-                    "u_l": random.random() * 100,
-                    "u_r": random.random() * 100,
-                    
-                    # IMU
-                    
-                    # Data
-                }
-            }
-            
-            try:
-                self.send_queue.put(data, block=False)
-                #print("Data put in queue")
-            except Exception as e:
-                logging.exception("[RaspBerry Pi] Error while sending data to queue")
-            
-            # 4. Computation
-            # 5. read data from remote server (command, data, etc...)
-            if not self.receive_queue.empty():
-                remote_data = self.receive_queue.get()
-                #print("Remote data: ", remote_data)
-            # 6. Make decision
-            #print("[RaspBerry Pi] Iteration done")
-            time.sleep(1)
-            
-        logging.info("Raspberry PI main loop closed")
-    
+        self.start_all()
+        
+        # TODO: Not necessary, but We put it in order to
+        # keep the main process running
+        while self.running:
+            time.sleep(10)
+ 
     def stop(self):
-        logging.info("[RapberryPi] stop trigerred")
-        self.stop_event.set()
+        self.running = False
+        logging.info("[RaspberryPI] Set stop event")
+        
+        self.ultra_sound_thread.shutdown()
+        self.ultra_sound_thread.join()
+        
+        self.imu_thread.shutdown()
+        self.imu_thread.join()
+        
+        self.rover_thread.shutdown()
+        self.rover_thread.join()
+        
+        logging.info("[RaspberryPI] Système arrêté proprement.")
     

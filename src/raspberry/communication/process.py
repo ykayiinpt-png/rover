@@ -1,12 +1,14 @@
 import asyncio
 import logging
 import multiprocessing
+from multiprocessing.managers import DictProxy
 import signal
 
 
 
 import asyncio
 import logging
+from typing import Any
 
 
 from src.raspberry.communication.data import DataAckSyncMqtt
@@ -26,13 +28,16 @@ class CommunicationProcess(multiprocessing.Process):
     data from brokers
     """
     
-    def __init__(self, host: str, port: int, 
+    def __init__(self, host: str, port: int,
+                rover_shared_state: DictProxy,
+                rover_shared_state_command_lock: Any, # multiprocessing.synchronize.Lock,
                 ultrasound_data_sent_queue: multiprocessing.Queue,
                 imu_data_send_queue: multiprocessing.Queue,
                 odometry_data_sent_queue: multiprocessing.Queue,
                 commands_send_queue: multiprocessing.Queue,
                 commands_receive_queue: multiprocessing.Queue,
                 map_data_send_queue: multiprocessing.Queue,
+                mapping_position_data_sent_queue: multiprocessing.Queue,
                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -44,7 +49,12 @@ class CommunicationProcess(multiprocessing.Process):
         self.odometry_data_sent_queue = odometry_data_sent_queue
         self.commands_send_queue = commands_send_queue
         self.commands_receive_queue = commands_receive_queue
+        
         self.map_data_send_queue = map_data_send_queue
+        self.mapping_position_data_sent_queue = mapping_position_data_sent_queue
+        
+        self.rover_shared_state = rover_shared_state
+        self.rover_shared_state_command_lock = rover_shared_state_command_lock
         
         self.mqtt_client: MqttClient = None
     
@@ -75,18 +85,24 @@ class CommunicationProcess(multiprocessing.Process):
         self.mqtt_client = MqttClient(
             uri=self.host, port=self.port,
             # Only topics for data reception
-            topics=["slam/commands/remote"],
+            topics=[
+                # Commands to move from the remote
+                "slam/rover/commands/remote"
+            ],
             async_event_loop=loop
         )
         
         self.component = ThreadMqttComponent(
             DataAckSyncMqtt(
+                rover_shared_state=self.rover_shared_state,
+                rover_shared_state_command_lock=self.rover_shared_state_command_lock,
                 ultrasound_data_sent_queue=self.ultrasound_data_sent_queue,
                 imu_data_send_queue=self.imu_data_send_queue,
                 odometry_data_sent_queue=self.odometry_data_sent_queue,
                 commands_send_queue=self.commands_send_queue,
                 commands_receive_queue=self.commands_receive_queue,
-                map_data_send_queue=self.map_data_send_queue
+                map_data_send_queue=self.map_data_send_queue,
+                mapping_position_data_sent_queue=self.mapping_position_data_sent_queue
             ),
             self.mqtt_client,
             ThreadCoroutineBridge(loop),
