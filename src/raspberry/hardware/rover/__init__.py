@@ -39,7 +39,7 @@ class RoverYawEstimator:
         dtheta_odom = (d_right - d_left) / self.wheel_base
         theta_odom = self.theta + dtheta_odom
         
-        print("Theta Odom", theta_odom, "Theta Imu", theta_imu, "dthetah_odom", dtheta_odom)
+        #print("Theta Odom", theta_odom, "Theta Imu", theta_imu, "dthetah_odom", dtheta_odom)
 
         # Complementary fusion
         self.theta = self.alpha * theta_imu + (1 - self.alpha) * theta_odom
@@ -368,7 +368,7 @@ class Rover:
         
         # Read the odometry movement        
         movement = self.odo.get_movement()
-        print("\n\n\n\n\n\nLast Movement\n\n\n\n\n\n")
+        #print("\n\n\n\n\n\nLast Movement\n\n\n\n\n\n")
         
         ############################################
         # Controls
@@ -434,7 +434,7 @@ class Rover:
                 if self.last_command["x"] in [-1, 1]:
                     rotation_rpm = 80 if theta_error > 0 else -80
                     base_rpm = 0
-                    print("Fixing angle")
+                    #print("Fixing angle")
                 else:
                     # We only apply the angle PID on certain angle error
                     if abs(theta_error) < 20:
@@ -442,10 +442,10 @@ class Rover:
                         # so that the velocity can stabilize
                         if now - self.pid_angle_last_time >= 1:
                             omega = self.pid_angle.compute(self.theta_target, self.command_theta, theta_error)
-                            print("Error theta: ", theta_error)
-                            print("Angle Omega: ", omega)
+                            #print("Error theta: ", theta_error)
+                            #print("Angle Omega: ", omega)
                             omega = clamp(omega, -int(self.base_velocity * 0.7), int(self.base_velocity * 0.7))
-                            print("Angle Omega Clamped: ", omega)
+                            #print("Angle Omega Clamped: ", omega)
                     else:
                         pass
         
