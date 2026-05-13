@@ -4,6 +4,7 @@ import time
 import numpy as np
 
 from src.core.filter import LowPassFilter1Order
+from src.core.shared import MemorySharedDict
 
 class SlidingWindow:
     def __init__(self, size):
@@ -215,7 +216,10 @@ class WheelEncoder:
 
 
 class WheelOdometry:
-    def __init__(self, left_params, right_params):
+    def __init__(self, left_params, right_params,
+                    rover_shared_state: MemorySharedDict, 
+                    mapping_shared_state: MemorySharedDict,
+                    navigation_shared_state: MemorySharedDict):
         self.left_wheel = WheelEncoder(
             name=left_params["name"], pin=left_params["pin"], 
             ticks_per_rev=left_params["ticks_per_rev"], wheel_diameter=left_params["wheel_diameter"],
@@ -230,10 +234,16 @@ class WheelOdometry:
             lpf_1_alpha=right_params["lpf_1_alpha"],
             window_filter_size=right_params["window_filter_size"]
         )
+        
+        self.rover_shared_state = rover_shared_state
+        self.mapping_shared_state = mapping_shared_state
+        self.navigation_shared_state = navigation_shared_state
 
     def get_movement(self):
         """
         Compute the robot's average movement based on wheel motion.
+        
+        IMPORTANT NOTE: this method has to be called once
 
         Returns:
             dict: Dictionary containing:
@@ -261,11 +271,21 @@ class WheelOdometry:
         avg_distance = (l_dist + r_dist) / 2.0
         #avg_distance = ((l_ticks+r_ticks)/2.0) * self.right_wheel.distance_per_tick
         
-        return {
-            "avg_dist": avg_distance, # mm
+        res = {
+            "avg_dist": avg_distance, # meter
+            "avg_rpm": (l_v + r_v)/2.0,
+            "avg_ms": ((l_v + r_v)/2.0) * ( self.left_wheel.wheel_diameter * np.pi / 60 ),
             "left": { "dist": l_dist, "v": l_v},
             "right": { "dist": r_dist, "v": r_v},
         }
+        
+        self.rover_shared_state["odometry"] = res
+        self.navigation_shared_state["odometry"] = res
+        self.mapping_shared_state["odometry"] = res
+        
+        print(self.mapping_shared_state)
+        
+        return res
 
     def stop(self):
         self.left_wheel.stop()

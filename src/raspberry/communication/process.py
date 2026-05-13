@@ -37,6 +37,7 @@ class CommunicationProcess(multiprocessing.Process):
                 commands_send_queue: multiprocessing.Queue,
                 commands_receive_queue: multiprocessing.Queue,
                 map_data_send_queue: multiprocessing.Queue,
+                mapping_position_data_sent_queue: multiprocessing.Queue,
                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -48,7 +49,9 @@ class CommunicationProcess(multiprocessing.Process):
         self.odometry_data_sent_queue = odometry_data_sent_queue
         self.commands_send_queue = commands_send_queue
         self.commands_receive_queue = commands_receive_queue
+        
         self.map_data_send_queue = map_data_send_queue
+        self.mapping_position_data_sent_queue = mapping_position_data_sent_queue
         
         self.rover_shared_state = rover_shared_state
         self.rover_shared_state_command_lock = rover_shared_state_command_lock
@@ -98,7 +101,8 @@ class CommunicationProcess(multiprocessing.Process):
                 odometry_data_sent_queue=self.odometry_data_sent_queue,
                 commands_send_queue=self.commands_send_queue,
                 commands_receive_queue=self.commands_receive_queue,
-                map_data_send_queue=self.map_data_send_queue
+                map_data_send_queue=self.map_data_send_queue,
+                mapping_position_data_sent_queue=self.mapping_position_data_sent_queue
             ),
             self.mqtt_client,
             ThreadCoroutineBridge(loop),

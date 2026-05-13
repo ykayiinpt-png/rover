@@ -22,9 +22,11 @@ class Navigation:
     STATE_MOVE_FORWARD = 1
     STATE_STOP = 2
     
-    def __init__(self, map_data_sent_queue: multiprocessing.Queue,
+    def __init__(self, 
+                 shared_state: dict,
+                 map_data_sent_queue: multiprocessing.Queue,
                  dim_w: float, dim_l: float,
-                dist_threshold:float =0.1, angle_threshold:float =10,):
+                dist_threshold:float =0.1, angle_threshold:float =5, distance_multiplier=2):
         """
         Initialize the Navigation object
         
@@ -34,8 +36,11 @@ class Navigation:
         :param angle_threshold: under the threashold, we consider the rover well alogned
         to target so it can go forward. Over the threashold the rover mus must rotate to 
         ajust the headning target angle
+        :param distance_multiplier: defines the the factor of multiplication we have to multiply the
+        distance computed in order to match the distance in pysical world after running many experiment
         """
         
+        self.shared_state = shared_state
         self.x, self.y = 0.0, 0.0
         
         self.waypoints = [(1.0, 0.0), (1.0, 1.0), (0.0, 0.0)]
@@ -44,10 +49,11 @@ class Navigation:
         self.angle_threshold = angle_threshold
         self.dim_w = dim_w
         self.dim_l = dim_l
+        self.distance_multiplier = distance_multiplier
         
         # We start with a stop state
         self.state = Navigation.STATE_STOP
-        self.theta_to_target = None
+        self.theta_to_target = 0.0
         self.distance_to_target = None
         # How much distznce we have traveled since the last waypoint 
         self.distance_from_last_target = 0
@@ -74,12 +80,15 @@ class Navigation:
         self.waypoints = [[0, 0]]
         # TODO: Pay attention
         self.waypoints.extend([[self.dim_l * x, self.dim_w * y] for x,y in waypoints])
-        print(self.waypoints)
+        #print(self.waypoints)
         
         
         self.x = 0
         self.y = 0
-        self.theta_to_target = None
+        
+        # Set the theta to target back to 0.0
+        self.theta_to_target = 0.0
+        self.theta_next_list = []
         self.distance_from_last_target = 0
         self.current_wp_idx = 1
         
@@ -87,7 +96,7 @@ class Navigation:
         
     def handle_batch(self):
         self.buffer.append((self.x, self.y, self.cumul_distance))
-        print("Handling Bath,\n\n\n\n\n\n")
+        #print("Handling Bath,\n\n\n\n\n\n")
 
         if len(self.buffer) == self.buffer_size:
             current_timestamp = datetime.now(timezone.utc).timestamp()
@@ -130,8 +139,12 @@ class Navigation:
         if self.current_wp_idx >= len(self.waypoints):
             # We stop because we do not have any further waypoint to reach
             self.state = Navigation.STATE_STOP
+            #print("Thetas plus: ", self.theta_next_list)
             
             return None, 0, 0
+        
+        d_moy = self.shared_state["odometry"]["avg_dist"]
+        #print("[Navigation]: d_moy from Shared object:", d_moy)
         
         current_angle_rad = np.deg2rad(current_angle)
         
@@ -147,32 +160,43 @@ class Navigation:
         dy = target_y - self.y
         
         distance = math.sqrt(dx**2 + dy**2)
-        #theta_to_target = math.degrees(math.atan2(dy, dx))
-        
-        target_x, target_y = self.waypoints[self.current_wp_idx]
-        target_x_1, target_y_1 = self.waypoints[self.current_wp_idx-1]
-        if self.theta_to_target == None:
-            self.theta_to_target = math.degrees(
-                math.atan2(target_y - target_y_1, target_x - target_x_1)
-            )
+        #theta_to_target = math.degrees(math.atan2(dy, dx))            
+            
         if self.distance_to_target == None:
+            target_x, target_y = self.waypoints[self.current_wp_idx]
+            target_x_1, target_y_1 = self.waypoints[self.current_wp_idx-1]
+        
             self.distance_to_target = math.sqrt((target_x - target_x_1)**2 + (target_y - target_y_1)**2)
             
+            # Heading angle to the next target
+            next_angle = wrap_angle(math.degrees(
+                math.atan2(target_y - target_y_1, target_x - target_x_1)
+            ), deg=True)
+            
+            # TODO: Rewrite those lines
+            
+            
+            #print("new angle: ", next_angle)
+            #print("Theta Target before: ", self.theta_to_target)
+            self.theta_to_target = next_angle
+            self.theta_to_target = wrap_angle(self.theta_to_target, deg=True)
+            
+            self.theta_next_list.append({"na": next_angle, "th": self.theta_to_target})
             # TODO: multiply the distance by two, real experience eveal that
             # travel distance is the command distance divided by two
-            print(f"Distance to next target: {self.distance_to_target}")
+            #print(f"Distance to next target: {self.distance_to_target}")
             
         # Normaly it has to be - 
         # But we have inversed the axis Of ou our base
         # Pay attention using the real word income
         theta_error = wrap_angle(self.theta_to_target - current_angle, deg=True)
-        print("Theta Error Navigation: ", theta_error)
-        print("d_moy:", d_moy)
-        print("Theta to target: ", self.theta_to_target)
-        print(f"Current angle: {current_angle}")
-        print("Distance to Target: ", distance)
-        print(f"Distance from last target: {self.distance_from_last_target}")
-        print(f"State: {self.state}")
+        #print("Theta Error Navigation: ", theta_error)
+        #print("d_moy:", d_moy)
+        #print("Theta to target: ", self.theta_to_target)
+        #print(f"Current angle: {current_angle}")
+        #print("Distance to Target: ", distance)
+        #print(f"Distance from last target: {self.distance_from_last_target}")
+        #print(f"State: {self.state}")
         
         
         # Check if we have to do a rotation before start moving
@@ -182,7 +206,7 @@ class Navigation:
             (self.state == Navigation.STATE_STOP and self.current_wp_idx < len(self.waypoints)):
             # Only check the angle if we have to rotate
             if abs(theta_error) < self.angle_threshold:
-                print("Theta reached")
+                #print("Theta reached")
                 theta_error = 0
                 
                 # We start Moving Forward
@@ -193,19 +217,11 @@ class Navigation:
         elif self.state == Navigation.STATE_MOVE_FORWARD:
             self.distance_from_last_target += d_moy
             
-            # If we have reached the waypoint, we go to next
-            # if distance < self.dist_threshold:
-            #     self.current_wp_idx += 1
-            #     print(f"Waypoint {self.current_wp_idx} reached !")
-                
-            #     self.state = Navigation.STATE_STOP
-            #     self.theta_to_target = None
             if abs(self.distance_to_target - self.distance_from_last_target) < self.dist_threshold:
                 self.current_wp_idx += 1
-                print(f"Waypoint {self.current_wp_idx} reached !")
+                ##print(f"Waypoint {self.current_wp_idx} reached !")
                 
                 self.state = Navigation.STATE_STOP
-                self.theta_to_target = None
                 self.distance_to_target = None
                 self.distance_from_last_target = 0.0
             

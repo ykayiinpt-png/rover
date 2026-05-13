@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from src.core.shared import MemorySharedDict
 from src.core.utils import clamp, dict_equal_fast, sign, wrap_angle
 from src.raspberry.hardware.rover.motor import RMotor
 from src.raspberry.hardware.rover.odometry import WheelOdometry
@@ -72,9 +73,11 @@ class Rover:
     COMMAND_TURN_LEFT = {"x": -1, "y": 0, "a": "move"}
     COMMAND_TURN_RIGHT = {"x": 1, "y": 0, "a": "moves"}
     
+    STATE_STOP = 3
+    STATE_MOVING = 4
+    
     def __init__(self,
-                shared_state: dict,
-                shared_state_command_lock: Any, #multiprocessing.synchronize.Lock,
+                shared_state: MemorySharedDict,
                 odo: WheelOdometry,
                 imu: IMUSensor,
                 imu_sensor_thread_lock: threading.Lock,
@@ -100,7 +103,6 @@ class Rover:
         
         
         self.shared_state = shared_state
-        self.shared_state_command_lock = shared_state_command_lock
         self.imu = imu
         self.imu_sensor_thread_lock = imu_sensor_thread_lock
         self.odo = odo
@@ -312,8 +314,10 @@ class Rover:
         self.last_command = cmd
         
         # Clear the command
-        with self.shared_state_command_lock:
-            self.shared_state["remote_command"] = None
+        self.shared_state["remote_command"] = None
+        
+        # Update the stop state for everyone
+        self.shared_state["stop"] = self._stopped
         
     def update(self, dt):
         """
@@ -364,6 +368,7 @@ class Rover:
         
         # Read the odometry movement        
         movement = self.odo.get_movement()
+        print("\n\n\n\n\n\nLast Movement\n\n\n\n\n\n")
         
         ############################################
         # Controls
@@ -390,19 +395,21 @@ class Rover:
                 # An we quit the update function
                 return
             elif self.navigation.state == Navigation.STATE_MOVE_FORWARD:
-                self.last_command = Rover.COMMAND_FORWARD
                 base_rpm = self.base_velocity
                 
                 # We set the new thetha target to the command target to let
                 # our rover know that this is the current direction
                 # to follow
-                self.theta_target = self.command_theta
+                self.theta_target = theta_to_target #self.command_theta
+                
+                self.exec_command(Rover.COMMAND_FORWARD)
             elif self.navigation.state == Navigation.STATE_ROTATE:
                 # We have correction to do by rotate the rover in place
                 if theta_error < 0:
-                    self.last_command = Rover.COMMAND_TURN_LEFT
+                    self.exec_command(Rover.COMMAND_TURN_LEFT)
                 elif theta_error > 0:
-                    self.last_command = Rover.COMMAND_TURN_RIGHT
+                    self.exec_command(Rover.COMMAND_TURN_RIGHT)
+                    
                 else:
                     pass
                 
@@ -425,7 +432,7 @@ class Rover:
                 self.pid_angle_last_time = now
             else:
                 if self.last_command["x"] in [-1, 1]:
-                    rotation_rpm = 30 if theta_error > 0 else -30
+                    rotation_rpm = 80 if theta_error > 0 else -80
                     base_rpm = 0
                     print("Fixing angle")
                 else:
@@ -461,8 +468,8 @@ class Rover:
             self.target_v_r = base_rpm - omega
         else:
             # TODO: review for left and
-            self.target_v_l = base_rpm - omega - rotation_rpm
-            self.target_v_r = base_rpm + omega + rotation_rpm
+            self.target_v_l = base_rpm + omega + rotation_rpm
+            self.target_v_r = base_rpm - omega - rotation_rpm
         
         #############################################
         # Motor PID 

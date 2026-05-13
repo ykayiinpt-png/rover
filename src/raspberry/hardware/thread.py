@@ -4,6 +4,7 @@ import multiprocessing
 import threading
 import time
 
+from src.core.shared import MemorySharedDict
 from src.raspberry.hardware.sensors.imu import IMUSensor
 from src.raspberry.hardware.sensors.ultrasound import UltrasoundSensorArray
 
@@ -66,10 +67,17 @@ class UltrasoundThread(threading.Thread):
         
 class IMUThread(threading.Thread):
     def __init__(self, sensor_hw: IMUSensor, imu_data_send_queue: multiprocessing.Queue,
+                rover_shared_state: MemorySharedDict, 
+                mapping_shared_state: MemorySharedDict,
+                navigation_shared_state: MemorySharedDict,
                 lock: threading.Lock, f=200,
                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.daemon = True
+        
+        self.rover_shared_state = rover_shared_state
+        self.mapping_shared_state = mapping_shared_state
+        self.navigation_shared_state = navigation_shared_state
         
         # Self attributes
         self.f = 200
@@ -122,11 +130,17 @@ class IMUThread(threading.Thread):
             with self.lock:
                 # The Imu class has an internal delta_t compute to integrate
                 # angle
-                self.sensor.update() 
+                self.sensor.update()
+                
+                imu_data = self.sensor.get_data()
+                
+                self.rover_shared_state["imu"] = imu_data
+                self.mapping_shared_state["imu"] = imu_data
+                self.navigation_shared_state["imu"] = imu_data
             
                 # Handle Batch data
                 if now - last_handle_batch_time > 0.05:
-                    self.handle_batch(self.sensor.get_data())
+                    self.handle_batch(imu_data)
                     last_handle_batch_time = now
             
 

@@ -4,6 +4,7 @@ import threading
 import time
 import numpy as np
 
+from src.core.shared import MemorySharedDict
 from src.raspberry.hardware.rover import Rover, RoverThread
 from src.raspberry.hardware.sensors.imu import IMUSensor
 from src.raspberry.hardware.sensors.ultrasound import UltrasoundSensorArray
@@ -23,7 +24,18 @@ class RaspberryPi:
                 odometry_data_sent_queue: multiprocessing.Queue,
                 commands_send_queue: multiprocessing.Queue,
                 commands_receive_queue: multiprocessing.Queue,
-                map_data_send_queue: multiprocessing.Queue):
+                map_data_send_queue: multiprocessing.Queue,
+                
+                rover_shared_state: MemorySharedDict, 
+                mapping_shared_state: MemorySharedDict,
+                navigation_shared_state: MemorySharedDict):
+        
+        #state
+        self.rover_shared_state = rover_shared_state
+        self.mapping_shared_state = mapping_shared_state
+        self.navigation_shared_state = navigation_shared_state
+        
+        #Attrs
         self.sonars = sonars_arr_obj
         self.imu = imu
         
@@ -40,12 +52,15 @@ class RaspberryPi:
         self.imu_thread = IMUThread(
             sensor_hw=imu,
             lock=imu_sensor_thread_lock,
-            imu_data_send_queue=imu_data_send_queue
+            imu_data_send_queue=imu_data_send_queue,
+            rover_shared_state=self.rover_shared_state, 
+            mapping_shared_state=self.mapping_shared_state,
+            navigation_shared_state=self.navigation_shared_state
         )
         
         self.rover_thread = RoverThread(
             rover=rover,
-            odometry_data_sent_queue=odometry_data_sent_queue
+            odometry_data_sent_queue=odometry_data_sent_queue,
         )
         
         self.running = True
