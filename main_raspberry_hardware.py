@@ -1,6 +1,7 @@
 import faulthandler
 
-from src.raspberry.hardware.exploration import ExplorationPlanner
+from src.raspberry.exploration import ExplorationPlanner
+from src.raspberry.log import PiLogger
 faulthandler.enable()
 
 
@@ -79,9 +80,14 @@ def main():
     odometry_data_sent_queue = multiprocessing.Queue(maxsize=1000)
     commands_send_queue = multiprocessing.Queue(maxsize=1000)
     commands_receive_queue = multiprocessing.Queue(maxsize=1000)
+    log_sent_queue = multiprocessing.Queue(maxsize=1000)
     
     communication_process: CommunicationProcess = None
     rover_mapping_process: MappingProcess =None
+    
+    pi_logger = PiLogger("RaspberryPI", log_sent_queue)
+    rover_logger = PiLogger("Rover", log_sent_queue)
+    mapping_logger = PiLogger("Mapping", log_sent_queue)
     
     features = cfg.features
     
@@ -89,6 +95,9 @@ def main():
         communication_process = CommunicationProcess(
             host=cfg.mqtt.host, port=cfg.mqtt.port,
             rover_shared_state=rover_shared_state, rover_shared_state_command_lock=rover_shared_state_command_lock,
+            
+            log_sent_queue=log_sent_queue,
+            
             ultrasound_data_sent_queue=ultrasound_data_sent_queue,
             imu_data_send_queue=imu_data_send_queue,
             odometry_data_sent_queue=odometry_data_sent_queue,
@@ -254,7 +263,9 @@ def main():
         
         wheels_base_distance=cfg.rover.odometry.wheels_base_distance,
         active_pid=cfg.rover.enable_pid,
-        active_angle_pid=cfg.rover.enable_angle_pid
+        active_angle_pid=cfg.rover.enable_angle_pid,
+        
+        logger=rover_logger
     )
     
     
@@ -275,6 +286,8 @@ def main():
         rover_shared_state=rover_shared_state,
         mapping_shared_state=mapping_shared_state,
         navigation_shared_state=navigation_shared_state,
+        
+        logger=pi_logger
     )
     print(raspberry_pi_instance)
     

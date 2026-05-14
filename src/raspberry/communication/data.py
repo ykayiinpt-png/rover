@@ -24,6 +24,9 @@ class DataAckSyncMqtt(RThread):
     def __init__(self,
                 rover_shared_state: DictProxy,
                 rover_shared_state_command_lock: Any, #multiprocessing.synchronize.Lock,
+                
+                log_sent_queue: multiprocessing.Queue,
+                
                 ultrasound_data_sent_queue: multiprocessing.Queue,
                 imu_data_send_queue: multiprocessing.Queue,
                 odometry_data_sent_queue: multiprocessing.Queue,
@@ -34,6 +37,8 @@ class DataAckSyncMqtt(RThread):
         super().__init__()
         
         self.counter = 0
+        
+        self.log_sent_queue = log_sent_queue
         
         self.ultrasound_data_sent_queue = ultrasound_data_sent_queue
         self.imu_data_send_queue = imu_data_send_queue
@@ -63,6 +68,7 @@ class DataAckSyncMqtt(RThread):
             
             # Check if we do have data to send to the remote server
             for q in [
+                self.log_sent_queue,
                 self.odometry_data_sent_queue, self.commands_send_queue,
                 self.map_data_send_queue, self.mapping_position_data_sent_queue,
                 self.ultrasound_data_sent_queue, self.imu_data_send_queue]:

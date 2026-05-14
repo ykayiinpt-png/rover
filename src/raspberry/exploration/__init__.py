@@ -138,10 +138,10 @@ class ExplorationPlanner:
         # BEST DIRECTION SELECTION
         # --------------------------------------------------
         directions = {
-            0: u_f,
-            180: u_b,
-            90: u_l,
-            -90: u_r
+            180: u_f,
+            0: u_b,
+            -90: u_l,
+            90: u_r
         }
 
         best_angle = max(directions, key=directions.get)

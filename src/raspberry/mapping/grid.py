@@ -5,6 +5,8 @@ import numpy as np
 
 class OccupancyMap:
     def __init__(self, width_m, height_m, resolution_x=0.1, resolution_y=0.1,
+                 cone_angle=np.deg2rad(15), # 15° by default
+                 num_rays=10,
                  log_odds_free_prob=-0.4, log_odds_occup_prob=0.85,
                  save_grid_to_file=True):
         self.res_x = resolution_x # 0.1m = 10cm par case
@@ -21,6 +23,11 @@ class OccupancyMap:
         self.width_m = width_m
         self.height_m = height_m
         
+        # Ultrasound parameters
+        self.cone_angle = cone_angle #np.deg2rad(15)   # 15°
+        self.num_rays = num_rays  
+        self.cone_rays_angles = np.linspace(-self.cone_angle/2, self.cone_angle/2, self.num_rays)
+        
         # Initialisation : 0.5 = inconnu, >0.5 = obstacle, <0.5 = libre
         self.grid = np.full((self.height, self.width), 0.5)
         self.logodds = np.zeros((self.height, self.width))
@@ -35,41 +42,37 @@ class OccupancyMap:
         dist : Distance mesurée par l'ultrason
         sensor_offset dict[str, float] : Angle du capteur
         """
-        # 1. Calcul de l'angle absolu du faisceau dans le monde
-        beam_angle = rtheta + sensor_offset
         
-        # 2. Coordonnées (x, y) de l'obstacle dans le monde (en mètres)
-        obj_x = rx + dist * np.cos(beam_angle)
-        obj_y = ry + dist * np.sin(beam_angle)
+        # On récupère les indices du robot lui-même
+        self.rx = int((rx + self.width_m / 2) / self.res_y)
+        self.ry = int((ry + self.height_m / 2) / self.res_x)
         
-        # 3. Conversion en indices de matrice (pixels)
-        #grid_x = int(obj_x / self.res_y)
-        #grid_y = int(obj_y / self.res_x)
-        
-        grid_x = int((obj_x + self.width_m / 2) / self.res_x)
-        grid_y = int((obj_y + self.height_m / 2) / self.res_y)
-        
-        print("\n\n\n\n")
-        print("Grid Values: ", grid_y, grid_x, "rtheta:", rtheta, "offset:", sensor_offset, "tobot:", (rx, ry))
-        # 4. Mise à jour de la grille (Probabiliste)
-        if 0 <= grid_x < self.width and 0 <= grid_y < self.height:
-            # On augmente la probabilité d'obstacle (max 1.0)
-            self.grid[grid_y, grid_x] = min(1.0, self.grid[grid_y, grid_x] + 0.2)
-            print("Valued: ", self.grid[grid_y, grid_x])
+        for delta in self.cone_rays_angles:
+            # 1. Calcul de l'angle absolu du faisceau dans le monde
+            beam_angle = rtheta + sensor_offset + delta
             
-            # TODO: à faire
-            # OPTIONNEL: On peut aussi "libérer" l'espace entre le robot et l'obstacle
-            # en traçant une ligne de cases "libres" (Bresenham's algorithm)
-            # --- LIBÉRER L'ESPACE (Bresenham light) ---
-            # On récupère les indices du robot lui-même
-            start_x = int((rx + self.width_m / 2) / self.res_y)
-            start_y = int((ry + self.height_m / 2) / self.res_x)
-            self.rx = start_x
-            self.ry = start_y
-            self.free_path(start_x, start_y, grid_x, grid_y)
-        else:
-            print("Out of bound: ", "max", "w:", self.width, "h:", self.height)
-            print("\n\n\n")
+            # 2. Coordonnées (x, y) de l'obstacle dans le monde (en mètres)
+            obj_x = rx + dist * np.cos(beam_angle)
+            obj_y = ry + dist * np.sin(beam_angle)
+            
+            # 3. Conversion en indices de matrice (pixels)
+            #grid_x = int(obj_x / self.res_y)
+            #grid_y = int(obj_y / self.res_x)
+            
+            grid_x = int((obj_x + self.width_m / 2) / self.res_x)
+            grid_y = int((obj_y + self.height_m / 2) / self.res_y)
+            
+            weight = 1.0 - abs(delta) / (self.cone_angle / 2)
+            # weight = np.exp(-(delta**2)/(2*sigma**2))
+            
+            print("\n\n\n\n")
+            print("Grid Values: ", grid_y, grid_x, "rtheta:", rtheta, "offset:", sensor_offset, "tobot:", (rx, ry))
+            # 4. Mise à jour de la grille (Probabiliste)
+            if 0 <= grid_x < self.width and 0 <= grid_y < self.height:             
+                self.free_path_and_mark_obstacle(self.rx, self.ry, grid_x, grid_y, weight)
+            else:
+                print("Out of bound: ", "max", "w:", self.width, "h:", self.height)
+                print("\n\n\n")
             
     def get_cells_updated_and_reset(self):
         """
@@ -124,7 +127,7 @@ class OccupancyMap:
     #             )
                 
     
-    def free_path(self, x0, y0, x1, y1):
+    def free_path_and_mark_obstacle(self, x0, y0, x1, y1, obstacle_weight=1.0):
         cells = self.bresenham(x0, y0, x1, y1)
 
         if len(cells) == 0:
@@ -144,7 +147,7 @@ class OccupancyMap:
         x, y = cells[-1]
 
         if 0 <= x < self.width and 0 <= y < self.height:
-            self.logodds[y, x] += self.l_occ
+            self.logodds[y, x] += self.l_occ * obstacle_weight
             self.logodds[y, x] = np.clip(self.logodds[y, x], -5, 5)
             
             self.last_updated_cells[(x, y)] = self.logodds[y, x]

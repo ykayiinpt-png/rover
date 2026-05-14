@@ -9,11 +9,12 @@ import numpy as np
 
 from src.core.shared import MemorySharedDict
 from src.core.utils import clamp, dict_equal_fast, sign, wrap_angle
-from src.raspberry.hardware.exploration import ExplorationPlanner
+from src.raspberry.exploration import ExplorationPlanner
 from src.raspberry.hardware.rover.motor import RMotor
 from src.raspberry.hardware.rover.odometry import WheelOdometry
 from src.raspberry.hardware.rover.pid import PIDController
 from src.raspberry.hardware.sensors.imu import IMUSensor
+from src.raspberry.log import PiLogger
 from src.raspberry.navigation import Navigation
 
 
@@ -88,6 +89,7 @@ class Rover:
                 theta_target,
                 control_mode: int,
                 navigation: Navigation, explorer: ExplorationPlanner,
+                logger: PiLogger,
                 pwm_bais_left=20, pwm_bais_right=20,
                 wheels_base_distance=0.10,
                 active_pid=False,
