@@ -119,6 +119,7 @@ class Rover:
         self.control_mode_next_mode = None
         
         self.direction = 1 # We are in the forward direction
+        self.turn_direction = 1 # No rotation
         
         
         ###################################
@@ -340,6 +341,12 @@ class Rover:
             
         self._stopped = False
         self.direction = 0 # By default we are looking forward
+        self.turn_direction = 0
+        
+        if cmd.get("x") == 1:
+            self.turn_direction = -1 # We are in reverse configuration to move forward
+        elif cmd.get("x") == -1:
+            self.turn_direction = 1 # We are in reverse configuration to move forward
         
         if cmd.get("x") == 1 and self.control_mode == Rover.MODE_MANUAL_NAVIGATION:
             self.theta_target -= self.base_rotation_velocity * dt
@@ -398,7 +405,8 @@ class Rover:
                     self.exec_command(self.COMMAND_FORWARD)
         
         # If we already stopped, we just return
-        if self._stopped or self.shared_state["stop"]:
+        #print(self.shared_state["stop"])
+        if self._stopped: # or self.shared_state["stop"]:
             # Just to avoid, in case we voer do it without knowing
             # out for control
             # TODO: Find a way to fix this
@@ -489,6 +497,7 @@ class Rover:
             
             if explorer_state in (ExplorationPlanner.STATE_MOVE_FORWARD, ExplorationPlanner.STATE_NONE):
                 if obstacle_detected:
+                    print("Obstacle detected")
                     self.exec_command(self.COMMAND_STOP)
                     self._stopped = False
 
@@ -505,16 +514,22 @@ class Rover:
             elif explorer_state == ExplorationPlanner.STATE_OBSTACLE_DETECTED:
                 # We stop for a while
                 self.exec_command(self.COMMAND_STOP)
+                print("Stopped")
+                
+                # Clear the area explorer
+                self.explorer.reset_search_area()
+                print("Explorer area cleared")
+                
                 self._stopped = False
                 
-                theta_target = self.explorer.compute_safe_direction()
-                if theta_target is None:
-                    # We are trapped
-                    self.exec_command(self.COMMAND_STOP)
-                    print("[EXPLORER] Rover Trapped !!!!")
-                    return
+                #theta_target = self.explorer.compute_safe_direction()
+                #if theta_target is None:
+                #    # We are trapped
+                #    self.exec_command(self.COMMAND_STOP)
+                #    print("[EXPLORER] Rover Trapped !!!!")
+                #    return
 
-                self.explorer.theta_target = theta_target
+                #self.explorer.theta_target = theta_target
                 self.explorer.state = ExplorationPlanner.STATE_WAIT_AFTER_STOP
                 
                 return
@@ -529,25 +544,60 @@ class Rover:
                 
                 return
             elif explorer_state == ExplorationPlanner.STATE_OBSTACLE_AVOIDING:
-                theta_target, theta_error, is_clear = self.explorer.handle_obstacle(self.command_theta)
-                print(theta_target, theta_error, is_clear)
+                #We rotate until we have done 360 degree
+                theta_target, theta_error, is_clear = self.explorer.search_open_area(self.command_theta)
+                print(f"theta_error={theta_error}, is_clear={is_clear}")
+                
                 if is_clear:
+                    print(f"theta_target={np.rad2deg(theta_target)}")
                     self.exec_command(self.COMMAND_STOP)
-                    time.sleep(0.001)
+                    time.sleep(1)
                     self._stopped = False
                     
-                    self.theta_target = theta_target
-                    self.explorer.state = ExplorationPlanner.STATE_MOVE_FORWARD
+                    if theta_target is not None:
+                        self.theta_target = np.rad2deg(theta_target)
+                        self.explorer.state = ExplorationPlanner.STATE_OBSTACLE_AVOIDING_ROTATE
+                    else:
+                        self.explorer.reset_search_area()
                     return
                 else:
                     if theta_error < 0:
                         self.exec_command(Rover.COMMAND_TURN_LEFT)
                     elif theta_error > 0:
                         self.exec_command(Rover.COMMAND_TURN_RIGHT)
-                    
-                    # Set base RPM to zero in order to rotate on place
+                
                     base_rpm = 0
-            
+                    
+                #theta_target, theta_error, is_clear = self.explorer.handle_obstacle(self.command_theta)
+                #print(theta_target, theta_error, is_clear)
+                #if is_clear:
+                #    self.exec_command(self.COMMAND_STOP)
+                #    time.sleep(0.001)
+                #    self._stopped = False
+                #    
+                #    self.theta_target = theta_target
+                #    self.explorer.state = ExplorationPlanner.STATE_MOVE_FORWARD
+                #    return
+                #else:
+                #    if theta_error < 0:
+                #        self.exec_command(Rover.COMMAND_TURN_LEFT)
+                #    elif theta_error > 0:
+                #        self.exec_command(Rover.COMMAND_TURN_RIGHT)
+                #    
+                #    # Set base RPM to zero in order to rotate on place
+                #    base_rpm = 0
+            elif explorer_state == ExplorationPlanner.STATE_OBSTACLE_AVOIDING_ROTATE:
+                theta_error = wrap_angle(self.theta_target - self.command_theta, deg=True)
+                print("In theta rotation! theta error: ", theta_error, self.theta_target, self.command_theta)
+                if abs(theta_error) < 5:
+                    self.exec_command(self.COMMAND_STOP)
+                    time.sleep(0.1)
+                    self._stopped = False
+                    self.explorer.state = ExplorationPlanner.STATE_MOVE_FORWARD
+                    return
+                else:
+                    # Rotate in one direction
+                    self.exec_command(Rover.COMMAND_TURN_RIGHT)
             elif self.explorer.state == ExplorationPlanner.STATE_STOP:
                 self.exec_command(self.COMMAND_STOP)
                 self._stopped = False
@@ -631,8 +681,8 @@ class Rover:
             self.target_v_l = base_rpm # + rotation_pwm
             self.target_v_r = base_rpm # - rotation_pwm
             
-            self.pwm_l = rotation_pwm
-            self.pwm_r = -rotation_pwm
+            self.pwm_l = self.turn_direction * rotation_pwm
+            self.pwm_r = self.turn_direction * -rotation_pwm
         
         #############################################
         # Motor PID 

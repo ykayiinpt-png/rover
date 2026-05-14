@@ -80,7 +80,7 @@ class IMUThread(threading.Thread):
         self.navigation_shared_state = navigation_shared_state
         
         # Self attributes
-        self.f = 200
+        self.f = 200000
         self.sensor = sensor_hw
         self.stop_event = threading.Event()
         self.imu_data_send_queue = imu_data_send_queue
@@ -149,7 +149,7 @@ class IMUThread(threading.Thread):
     def shutdown(self):
         self.stop_event.set()
         try:
-            time.sleep(5) # Wait some time to have the lopp ended
+            time.sleep(0.1) # Wait some time to have the lopp ended
             self.lock.release()
             self.lock.release_lock()
         except:

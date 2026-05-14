@@ -4,7 +4,7 @@ mqtt:
     port: 1883
 
 features: 
-    - video
+    #- video
     - "data"
     #- commands
     #- none
@@ -13,7 +13,7 @@ features:
 # Video processing
 ##########################################
 video:
-    enabled: true
+    enabled: false
     pipelines:
         # NOTE: Disabled for Performance and Memory Issue
         object_detection:
@@ -154,9 +154,10 @@ rover:
     velocity: 200 #147 # 147 RPM = 0.5 m/s
     velocity_rotate: 5 # 20 degree per second, command left and right velocity
     # In place rotation velocity added to motor bias
-    swivel_velocity_pwm: 80 # Units is ducycycle
-    enable_pid: true
-    enable_angle_pid: true
+    swivel_velocity_pwm: 15 # Units is ducycycle , 15 for indoor
+    no_pid_stright_direction_pwm: 20
+    enable_pid: false
+    enable_angle_pid: false
     odometry:
         wheels_base_distance: 0.10 # m, 10cm --> 0.10 m
         left_wheel:
@@ -279,3 +280,5 @@ exploration:
     enabled: true
     angle_threshold: 5
     dist_threshold: 0.25
+    max_angle_gap_deg: 50 # Salle TP indoors because of hight rotation velocity
+    min_sector_size_deg: 60 # Salle TP indoors because of hight rotation velocity

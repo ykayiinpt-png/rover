@@ -198,6 +198,7 @@ def main():
     rover_explorer = ExplorationPlanner(
         safe_avoid_angle=cfg.exploration.angle_threshold,
         safe_distance=cfg.exploration.dist_threshold,
+        max_angle_gap_deg=cfg.exploration.max_angle_gap_deg, min_sector_size_deg=cfg.exploration.min_sector_size_deg,
         rover_shared_state=rover_shared_state,
         mapping_shared_state=mapping_shared_state,
         navigation_shared_state=navigation_shared_state,
@@ -223,7 +224,7 @@ def main():
     rover = Rover(
         navigation=rover_navigation,
         explorer=rover_explorer,
-        control_mode=Rover.MODE_MANUAL_NAVIGATION, #Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
+        control_mode=Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
         base_rotation_velocity=cfg.rover.velocity_rotate,
         swivel_velocity_pwm=cfg.rover.swivel_velocity_pwm,

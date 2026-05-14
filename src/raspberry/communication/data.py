@@ -73,6 +73,7 @@ class DataAckSyncMqtt(RThread):
                     if payload.get("topic") == "slam/heartbeat/remote":
                         # So we are still connected to the remote
                         last_heartbeat = now
+                        self.rover_shared_state["stop"] = False
                         
                 if now - last_heartbeat > 3:
                     # If we do not have heatbeat from the remote
