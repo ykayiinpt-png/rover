@@ -89,6 +89,7 @@ def main():
     
     pi_logger = PiLogger("RaspberryPI", log_sent_queue)
     rover_logger = PiLogger("Rover", log_sent_queue)
+    rover_thread_logger = PiLogger("RoverThread", log_sent_queue)
     mapping_logger = PiLogger("Mapping", log_sent_queue)
     
     features = cfg.features
@@ -222,10 +223,11 @@ def main():
     rover = Rover(
         navigation=rover_navigation,
         explorer=rover_explorer,
-        control_mode= Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
+        control_mode=Rover.MODE_MANUAL_NAVIGATION, #Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
         base_rotation_velocity=cfg.rover.velocity_rotate,
         swivel_velocity_pwm=cfg.rover.swivel_velocity_pwm,
+        no_pid_stright_direction_pwm_dutycycle_value=cfg.rover.no_pid_stright_direction_pwm,
         shared_state=rover_shared_state,
         odo= odometry,
         
@@ -295,7 +297,8 @@ def main():
         mapping_shared_state=mapping_shared_state,
         navigation_shared_state=navigation_shared_state,
         
-        logger=pi_logger
+        logger=pi_logger,
+        rover_thread_logger=rover_thread_logger
     )
     print(raspberry_pi_instance)
     

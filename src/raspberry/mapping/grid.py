@@ -65,14 +65,15 @@ class OccupancyMap:
             weight = 1.0 - abs(delta) / (self.cone_angle / 2)
             # weight = np.exp(-(delta**2)/(2*sigma**2))
             
-            print("\n\n\n\n")
-            print("Grid Values: ", grid_y, grid_x, "rtheta:", rtheta, "offset:", sensor_offset, "tobot:", (rx, ry))
+            #print("\n\n\n\n")
+            #print("Grid Values: ", grid_y, grid_x, "rtheta:", rtheta, "offset:", sensor_offset, "tobot:", (rx, ry))
             # 4. Mise à jour de la grille (Probabiliste)
             if 0 <= grid_x < self.width and 0 <= grid_y < self.height:             
                 self.free_path_and_mark_obstacle(self.rx, self.ry, grid_x, grid_y, weight)
             else:
-                print("Out of bound: ", "max", "w:", self.width, "h:", self.height)
-                print("\n\n\n")
+                pass
+                #print("Out of bound: ", "max", "w:", self.width, "h:", self.height)
+                #print("\n\n\n")
             
     def get_cells_updated_and_reset(self):
         """

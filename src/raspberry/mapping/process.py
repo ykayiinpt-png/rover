@@ -115,8 +115,8 @@ class MappingProcess(multiprocessing.Process):
                     
                     
                     for k, v in ultra_sound_dists.items():
-                        print(f"Ulstra sound k: {k}  -- {v}")
-                        print("Offset: ", ultra_sound_angle_offsets[k])
+                        #print(f"Ulstra sound k: {k}  -- {v}")
+                        #print("Offset: ", ultra_sound_angle_offsets[k])
                         self.occupacy_grid.mark_obstacle(
                             x, y, theta,
                             v,

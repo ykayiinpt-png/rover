@@ -57,8 +57,8 @@ class DataAckSyncMqtt(RThread):
             if not self.queue_bridge.q_sync.empty():
                 payload = self.queue_bridge.q_sync.get_nowait()
                 #print("Data from remote server")
-                print(payload)
-                print(type(payload))
+                #print(payload)
+                #print(type(payload))
                 
                 if payload.get("topic") is not None and payload.get("data") is not None:
                     if payload.get("topic") == "slam/rover/commands/remote":
