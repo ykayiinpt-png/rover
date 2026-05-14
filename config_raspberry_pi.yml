@@ -15,8 +15,32 @@ features:
 video:
     enabled: true
     pipelines:
+        # NOTE: Disabled for Performance and Memory Issue
         object_detection:
-            enabled: true
+            enabled: false
+            draw_boxes: true
+            model:
+                name: "yolov8n.pt"
+            frame:
+                rate: 30
+            classes:
+                [
+                    "boite", "obstacle", "box"
+                ]
+            confidence:
+                threshold: 0.1
+        object_detection_ncnn:
+            enabled: false
+            param_path: /home/tp2023/VProj/rover/yolov8n_ncnn_model/model.ncnn.param
+            bin_path: /home/tp2023/VProj/rover/yolov8n_ncnn_model/model.ncnn.bin
+            input_name: in0
+            output_name: out0
+            classes: ["boite", "obstacle", "box"]
+            frame:
+                rate: 5
+            draw_boxes: true
+            confidence:
+                threshold: 0.7
     command:
         camera:
             [
@@ -37,7 +61,7 @@ video:
                 "-f", "rawvideo",
                 "-pix_fmt", "bgr24",
                 "-s", "320x240",
-                "-r", "30",
+                "-r", "15",
                 "-i", "-",
 
                 # VERY IMPORTANT
@@ -54,7 +78,7 @@ video:
 
                 # CRITICAL
                 "-x264-params",
-                "keyint=30:min-keyint=30:no-scenecut=1:repeat-headers=1",
+                "keyint=15:min-keyint=15:no-scenecut=1:repeat-headers=1",
 
                 # OPTIONAL
                 "-pix_fmt", "yuv420p",

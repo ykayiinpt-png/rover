@@ -6,6 +6,10 @@ import time
 import cv2
 import numpy as np
 
+from libs.tencent_ncnn.src.inference.detector import ObjectDetector
+from src.raspberry.config import Config
+from src.raspberry.video.pipeline import ObjectDetectionPipeline, ObjectDetectionPipelineNcnn, ObjectDetectionPipelineNcnnTwo
+
 
 class CameraProcess(multiprocessing.Process):
     """
@@ -43,6 +47,8 @@ class CameraProcess(multiprocessing.Process):
         
         self.cam_cmd = cam_cmd
         self.ffmpeg_cmd = ffmpeg_cmd
+        self.cam_subprocess = None
+        self.ffmpeg_subprocess = None 
 
         # self.cam_cmd = [
         #     "libcamera-vid",
@@ -72,6 +78,46 @@ class CameraProcess(multiprocessing.Process):
         #     "-f", "rtp",
         #     f"rtp://{self.rtp_ip}:{self.rtp_port}"
         # ]
+        
+        # Config
+        self.cfg = Config()
+        
+        # Pipelines
+        self.pipeline_object_detection = ObjectDetectionPipeline(
+            classes=self.cfg.video.pipelines.object_detection.classes,
+            conf_threshold=self.cfg.video.pipelines.object_detection.confidence.threshold,
+            draw_boxes=self.cfg.video.pipelines.object_detection.draw_boxes,
+            frame_rate=self.cfg.video.pipelines.object_detection.frame.rate,
+            model_name=self.cfg.video.pipelines.object_detection.model.name,
+        )
+        
+        # self.pipeline_object_detection_ncnn = ObjectDetectionPipelineNcnn(
+        #     bin_path=self.cfg.video.pipelines.object_detection_ncnn.bin_path,
+        #     input_name=self.cfg.video.pipelines.object_detection_ncnn.input_name,
+        #     output_name=self.cfg.video.pipelines.object_detection_ncnn.output_name,
+        #     param_path=self.cfg.video.pipelines.object_detection_ncnn.param_path,
+        #     classes=self.cfg.video.pipelines.object_detection_ncnn.classes,
+        #     conf_threshold=self.cfg.video.pipelines.object_detection_ncnn.confidence.threshold,
+        #     draw_boxes=self.cfg.video.pipelines.object_detection_ncnn.draw_boxes,
+        #     frame_rate=self.cfg.video.pipelines.object_detection_ncnn.frame.rate
+        # )
+        
+        
+        # detector = ObjectDetector(
+        #     bin_path=self.cfg.video.pipelines.object_detection_ncnn.bin_path,
+        #     param_path=self.cfg.video.pipelines.object_detection_ncnn.param_path,
+        #     architecture="yolov8",
+        #     target_size=320,
+        #     num_threads=4,
+        #     use_vulkan=False
+        # )
+            
+        # self.pipeline_object_detection_ncnn = ObjectDetectionPipelineNcnnTwo(
+        #     object_detector=detector,
+        #     classes=self.cfg.video.pipelines.object_detection_ncnn.classes,
+        #     frame_rate=5,
+        #     draw_boxes=True
+        # )
         
     def main(self):
         self.cam_subprocess = subprocess.Popen(
@@ -119,34 +165,48 @@ class CameraProcess(multiprocessing.Process):
                 frame_count = 0
 
             # TODO: Run IA here to detect object
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            edges = cv2.Canny(gray, 100, 200)
-            processed = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+            #gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            #edges = cv2.Canny(gray, 100, 200)
+            #processed = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+            
+            #result_frame = frame
+            
+            
+            #if self.cfg.video.pipelines.object_detection.enabled:
+            #    result_frame, objects = self.pipeline_object_detection.process(result_frame)
+            #    print("Objects Yolo: ", objects)
+            
+            #if self.cfg.video.pipelines.object_detection_ncnn.enabled:
+            #    print("I?")
+            #    result_frame, objects = self.pipeline_object_detection_ncnn.process(result_frame)
+            #    print("Objects Ncnn: ", objects)
+            #    pass  
+                
             
             
             #################""
             # Write FPS
-            text = f"FPS: {fps:.1f}"
+            # text = f"FPS: {fps:.1f}"
 
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.8
-            thickness = 2
+            # font = cv2.FONT_HERSHEY_SIMPLEX
+            # font_scale = 0.3
+            # thickness = 1
 
-            (text_w, text_h), _ = cv2.getTextSize(text, font, font_scale, thickness)
+            # (text_w, text_h), _ = cv2.getTextSize(text, font, font_scale, thickness)
 
-            x = frame.shape[1] - text_w - 10   # top-right padding
-            y = 30
+            # x = frame.shape[1] - text_w - 10   # top-right padding
+            # y = 30
 
-            cv2.putText(
-                frame,
-                text,
-                (x, y),
-                font,
-                font_scale,
-                (0, 255, 0),
-                thickness,
-                cv2.LINE_AA
-            )
+            # cv2.putText(
+            #     frame,
+            #     text,
+            #     (x, y),
+            #     font,
+            #     font_scale,
+            #     (0, 255, 0),
+            #     thickness,
+            #     cv2.LINE_AA
+            # )
 
             self.ffmpeg_subprocess.stdin.write(frame.tobytes())
         

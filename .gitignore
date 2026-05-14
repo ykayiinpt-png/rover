@@ -48,3 +48,7 @@ temp/
 *.local.*
 
 ./occupancy_grid_*.npy
+
+yolov8n_ncnn_model/**
+
+*.pt
