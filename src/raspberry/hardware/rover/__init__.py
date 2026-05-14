@@ -398,7 +398,7 @@ class Rover:
                     self.exec_command(self.COMMAND_FORWARD)
         
         # If we already stopped, we just return
-        if self._stopped:
+        if self._stopped or self.shared_state["stop"]:
             # Just to avoid, in case we voer do it without knowing
             # out for control
             # TODO: Find a way to fix this

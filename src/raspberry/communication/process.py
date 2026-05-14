@@ -91,7 +91,10 @@ class CommunicationProcess(multiprocessing.Process):
             # Only topics for data reception
             topics=[
                 # Commands to move from the remote
-                "slam/rover/commands/remote"
+                "slam/rover/commands/remote",
+                
+                # Awareness
+                "slam/heartbeat/remote"
             ],
             async_event_loop=loop
         )

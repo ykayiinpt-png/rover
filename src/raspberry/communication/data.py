@@ -52,7 +52,12 @@ class DataAckSyncMqtt(RThread):
         self.rover_shared_state_command_lock = rover_shared_state_command_lock
         
     def run(self):
+        last_heartbeat = time.perf_counter()
+        last_sent_heartbeat = time.perf_counter()
+        
         while not self.stop_event.is_set():
+            now = time.perf_counter()
+            
             # Check if we have data from the remote server
             if not self.queue_bridge.q_sync.empty():
                 payload = self.queue_bridge.q_sync.get_nowait()
@@ -65,6 +70,15 @@ class DataAckSyncMqtt(RThread):
                         with self.rover_shared_state_command_lock:
                             self.rover_shared_state["remote_command"] = payload.get("data")
                         #self.commands_receive_queue.put(payload.get("data"))
+                    if payload.get("topic") == "slam/heartbeat/remote":
+                        # So we are still connected to the remote
+                        last_heartbeat = now
+                        
+                if now - last_heartbeat > 3:
+                    # If we do not have heatbeat from the remote
+                    # fro 3 seconds, we stop the system
+                    self.rover_shared_state["stop"] = True
+                        
             
             # Check if we do have data to send to the remote server
             for q in [
@@ -81,6 +95,14 @@ class DataAckSyncMqtt(RThread):
                         "topic": data.get("topic", "all"),
                         "payload": data.get("payload")
                     })
+            
+            # Send heartbeat
+            if now - last_sent_heartbeat > 2:
+                self.queue_bridge.push_from_thread({
+                    "topic": "slam/heartbeat/local",
+                    "payload": {"from": "PI4"}
+                })
+                last_sent_heartbeat = now
             
             #time.sleep(0.001)
         
