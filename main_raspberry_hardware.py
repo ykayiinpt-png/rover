@@ -2,6 +2,7 @@ import faulthandler
 
 from src.raspberry.exploration import ExplorationPlanner
 from src.raspberry.log import PiLogger
+from src.raspberry.video.process import CameraProcess
 faulthandler.enable()
 
 
@@ -83,6 +84,7 @@ def main():
     log_sent_queue = multiprocessing.Queue(maxsize=1000)
     
     communication_process: CommunicationProcess = None
+    camera_process: CameraProcess = None
     rover_mapping_process: MappingProcess =None
     
     pi_logger = PiLogger("RaspberryPI", log_sent_queue)
@@ -105,6 +107,12 @@ def main():
             commands_receive_queue=commands_receive_queue,
             map_data_send_queue=map_data_send_queue,
             mapping_position_data_sent_queue=mapping_position_data_sent_queue
+        )
+    
+    if "video" in features:
+        camera_process = CameraProcess(
+            cam_cmd=cfg.video.command.camera,
+            ffmpeg_cmd=cfg.video.command.ffmpeg
         )
     
     sonar_array=UltrasoundSensorArray(
@@ -297,6 +305,10 @@ def main():
             communication_process.start()
             logging.info("[Main] Communication process scheduled to start")
             
+        if "video" in features:
+            camera_process.start()
+            logging.info("[Main] Camera process scheduled to start")
+            
         if cfg.mapping.enabled:
             rover_mapping_process.start()
         
@@ -334,6 +346,11 @@ def main():
         
         if "data" in features:
             try:
+                # NOTE: Not to call. The function is asynchronnous
+                # and is already handled insite the process
+                # that runs an event loop
+                # communication_process.stop()
+                
                 if communication_process is not None and communication_process.is_alive():
                     communication_process.terminate()
                     communication_process.join(timeout=5)
@@ -345,6 +362,24 @@ def main():
                 logging.info("[Main] [communication_process] Clean exit.")
             except Exception as e:
                 logging.exception("[Main] communication_process Exception while running")
+        
+        if "video" in features:
+            try:
+                # Here we have to call stop
+                camera_process.stop()
+                time.sleep(5)
+                
+                if camera_process is not None and camera_process.is_alive():
+                    camera_process.terminate()
+                    camera_process.join(timeout=5)
+
+                    if camera_process.is_alive():
+                        logging.warning("[Main] [CameraProcess] Server Force killing Communcation process...")
+                        camera_process.kill()
+
+                logging.info("[Main] [CameraProcess] Clean exit.")
+            except Exception as e:
+                logging.exception("[Main] CameraProcess Exception while running")
                 
         if cfg.mapping.enabled:
             try:

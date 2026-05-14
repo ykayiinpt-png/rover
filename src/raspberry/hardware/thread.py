@@ -148,6 +148,13 @@ class IMUThread(threading.Thread):
         
     def shutdown(self):
         self.stop_event.set()
+        try:
+            time.sleep(5) # Wait some time to have the lopp ended
+            self.lock.release()
+            self.lock.release_lock()
+        except:
+            pass
+        
         logging.info("Imu Thread shutting down")
         self.sensor.stop()
         logging.info("Imu shutdown OK")

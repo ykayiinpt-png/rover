@@ -4,11 +4,85 @@ mqtt:
     port: 1883
 
 features: 
-    #- video
+    - video
     - "data"
     #- commands
     #- none
 
+##########################################
+# Video processing
+##########################################
+video:
+    enabled: true
+    pipelines:
+        object_detection:
+            enabled: true
+    command:
+        camera:
+            [
+                "libcamera-vid",
+                "-t", "0",
+                "--codec", "mjpeg",
+                "--width", "320",
+                "--height", "240",
+                "--framerate", "30",
+                "--nopreview",
+                "-o", "-"
+            ]
+        ffmpeg:
+            [
+                "ffmpeg",
+
+                # INPUT
+                "-f", "rawvideo",
+                "-pix_fmt", "bgr24",
+                "-s", "320x240",
+                "-r", "30",
+                "-i", "-",
+
+                # VERY IMPORTANT
+                "-fflags", "nobuffer",
+                "-flags", "low_delay",
+
+                # ENCODER
+                "-an",
+                "-c:v", "libx264",
+
+                # CRITICAL
+                "-preset", "ultrafast",
+                "-tune", "zerolatency",
+
+                # CRITICAL
+                "-x264-params",
+                "keyint=30:min-keyint=30:no-scenecut=1:repeat-headers=1",
+
+                # OPTIONAL
+                "-pix_fmt", "yuv420p",
+
+                # OUTPUT
+                "-f", "mpegts",
+                
+                # NOTE: Must tbe the remote machine IP address
+                "udp://192.168.137.1:5004"
+            ]
+        # ffmpeg:
+        #     [
+        #         "ffmpeg",
+
+        #         "-f", "rawvideo",
+        #         "-pix_fmt", "bgr24",
+        #         "-s", "3200x240",
+        #         "-r", "30",
+        #         "-i", "-",
+
+        #         "-an",
+        #         "-c:v", "libx264",
+        #         "-preset", "ultrafast",
+        #         "-tune", "zerolatency",
+
+        #         "-f", "rtp",
+        #         "rtp://192.168.137.1:5004"
+        #     ]
 ###########################################
 # Sensors
 ###########################################
@@ -141,11 +215,14 @@ mapping:
     enabled: true
     occupancy_grid:
         save_file_on_stop: true
-        width: 20 # 10 meters
-        height: 20 # 10 meters
+        width: 8 # 10 meters
+        height: 8 # 10 meters
         resolution:
-            x: 0.3
-            y: 0.24
+            x: 0.1 #0.3
+            y: 0.1 #0.24
+        log_odds:
+            free: -0.4
+            obstacle: 0.85
 
 ###########################################
 # Autonomous navigation
@@ -155,7 +232,7 @@ mapping:
 navigation:
     enabled: true
     angle_threshold: 3
-    dist_threshold: 0.1
+    dist_threshold: 0.2
     distance_multiplier: 1
     # Rover dimensions. It represents the norm of of the two axis
     dim:
