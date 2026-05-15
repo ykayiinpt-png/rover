@@ -116,6 +116,7 @@ class Rover:
         ######################################
         # Control mode
         self.control_mode = control_mode
+        self.set_mode_ui_state()
         self.control_mode_next_mode = None
         
         self.direction = 1 # We are in the forward direction
@@ -211,6 +212,12 @@ class Rover:
         :param theta: the new target value
         """
         self.theta_target = theta
+        
+    def set_mode_ui_state(self):
+        if self.control_mode == Rover.MODE_WAYPOINTS_NAVIGATION:
+            self.shared_state["mode"] = "W"
+        else:
+            self.shared_state["mode"] = "E"
         
 
     @property        
@@ -399,6 +406,7 @@ class Rover:
             if self.control_mode_change_start_time is not None:
                 if now - self.control_mode_change_start_time > 5:
                     self.control_mode = self.control_mode_next_mode
+                    self.set_mode_ui_state()
                     
                     # We erase
                     self.control_mode_next_mode = None

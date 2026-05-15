@@ -6,6 +6,7 @@ import time
 import numpy as np
 
 from src.core.shared import MemorySharedDict
+from src.raspberry.hardware.rover import Rover
 from src.raspberry.mapping.grid import OccupancyMap
 from src.raspberry.mapping.kalman import KalmanMapping
 
@@ -66,6 +67,7 @@ class MappingProcess(multiprocessing.Process):
         payload = self.occupacy_grid.get_cells_updated_and_reset()
         
         payload["robot"] = [self.occupacy_grid.rx, self.occupacy_grid.ry]
+        payload["mode"] = self.rover_shared_state["mode"]
         
         q_data = {
             "topic": "slam/rover/data/mapping/grid",
