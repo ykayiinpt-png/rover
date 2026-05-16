@@ -224,7 +224,7 @@ def main():
     rover = Rover(
         navigation=rover_navigation,
         explorer=rover_explorer,
-        control_mode=Rover.MODE_MANUAL_NAVIGATION, #Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
+        control_mode=None, #Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
         base_rotation_velocity=cfg.rover.velocity_rotate,
         swivel_velocity_pwm=cfg.rover.swivel_velocity_pwm,

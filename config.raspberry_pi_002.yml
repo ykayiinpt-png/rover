@@ -1,0 +1,284 @@
+# python -X faultenable main_raspberry_hardware.py
+mqtt:
+    host: 192.168.137.1
+    port: 1883
+
+features: 
+    - "video"
+    - "data"
+    #- commands
+    #- none
+
+##########################################
+# Video processing
+##########################################
+video:
+    enabled: true
+    pipelines:
+        # NOTE: Disabled for Performance and Memory Issue
+        object_detection:
+            enabled: false
+            draw_boxes: true
+            model:
+                name: "yolov8n.pt"
+            frame:
+                rate: 30
+            classes:
+                [
+                    "boite", "obstacle", "box"
+                ]
+            confidence:
+                threshold: 0.1
+        object_detection_ncnn:
+            enabled: false
+            param_path: /home/tp2023/VProj/rover/yolov8n_ncnn_model/model.ncnn.param
+            bin_path: /home/tp2023/VProj/rover/yolov8n_ncnn_model/model.ncnn.bin
+            input_name: in0
+            output_name: out0
+            classes: ["boite", "obstacle", "box"]
+            frame:
+                rate: 5
+            draw_boxes: true
+            confidence:
+                threshold: 0.7
+    command:
+        camera:
+            [
+                "libcamera-vid",
+                "-t", "0",
+                "--codec", "mjpeg",
+                "--width", "320",
+                "--height", "240",
+                "--framerate", "30",
+                "--nopreview",
+                "-o", "-"
+            ]
+        ffmpeg:
+            [
+                "ffmpeg",
+
+                # INPUT
+                "-f", "rawvideo",
+                "-pix_fmt", "bgr24",
+                "-s", "320x240",
+                "-r", "15",
+                "-i", "-",
+
+                # VERY IMPORTANT
+                "-fflags", "nobuffer",
+                "-flags", "low_delay",
+
+                # ENCODER
+                "-an",
+                "-c:v", "libx264",
+
+                # CRITICAL
+                "-preset", "ultrafast",
+                "-tune", "zerolatency",
+
+                # CRITICAL
+                "-x264-params",
+                "keyint=15:min-keyint=15:no-scenecut=1:repeat-headers=1",
+
+                # OPTIONAL
+                "-pix_fmt", "yuv420p",
+
+                # OUTPUT
+                "-f", "mpegts",
+                
+                # NOTE: Must tbe the remote machine IP address
+                "udp://192.168.137.1:5004"
+            ]
+        # ffmpeg:
+        #     [
+        #         "ffmpeg",
+
+        #         "-f", "rawvideo",
+        #         "-pix_fmt", "bgr24",
+        #         "-s", "3200x240",
+        #         "-r", "30",
+        #         "-i", "-",
+
+        #         "-an",
+        #         "-c:v", "libx264",
+        #         "-preset", "ultrafast",
+        #         "-tune", "zerolatency",
+
+        #         "-f", "rtp",
+        #         "rtp://192.168.137.1:5004"
+        #     ]
+###########################################
+# Sensors
+###########################################
+imu:
+    freq: 200 # 200Hz
+    bus_address: 0x68
+    bus_number: 1
+    gyro:
+        z:
+            offset: 0
+            lpf_1_alpha: 0.99
+
+ultra_sounds:
+    freq: 0
+    front:
+        name: "Front"
+        key: "u_f"
+        gpio:
+            trig: 16
+            echo: 19
+    back:
+        name: "Back"
+        key: "u_b"
+        gpio:
+            trig: 20
+            echo: 21
+    right:
+        name: "Right"
+        key: "u_r"
+        gpio:
+            trig: 26
+            echo: 7 #"Have to disable SPI in order to add interruption to pin 7 (SPI pin)"
+    left:
+        name: "Left"
+        key: "u_l"
+        gpio:
+            trig: 5
+            echo: 6
+
+###########################################
+# Vehicle
+###########################################
+rover:
+    freq: 20 # 20 Hz
+    velocity: 200 #147 # 147 RPM = 0.5 m/s
+    velocity_rotate: 5 # 20 degree per second, command left and right velocity
+    # In place rotation velocity added to motor bias
+    swivel_velocity_pwm: 16 # Units is ducycycle , 15 for indoor
+    no_pid_stright_direction_pwm: 20
+    enable_pid: true
+    enable_angle_pid: true
+    odometry:
+        wheels_base_distance: 0.10 # m, 10cm --> 0.10 m
+        left_wheel:
+            name: "Left"
+            gpio:
+                pin: 10
+            ticks_per_rev: 20
+            wheel_diameter: 0.065 # 0.065m -> 6.5cm
+            min_ticks_delta: 2
+            lpf_1_alpha: 0.85
+            window_filter_size: 0
+        right_wheel:
+            name: "Right"
+            gpio:
+                pin: 9
+            ticks_per_rev: 20
+            wheel_diameter: 0.065 # 0.065m -> 6.5cm
+            min_ticks_delta: 2
+            lpf_1_alpha: 0.8
+            window_filter_size: 0
+    angle:
+        straight:
+            # the width line orientation in compraison to the IMU axis
+            ref: 0.0
+            pid:
+                kp: 3
+                ki: 0.01
+                kd: 3
+    motor_left:
+        pwm: 100 # 100 Hz
+        max_power: 90
+        duty_cycle:
+            bais: 15
+        gpio:
+            in1: 22
+            in2: 23
+            pwm: 13
+        pid:
+            max_integral: 1500
+            kp: 0
+            ki: 0
+            kd: 0
+            #kp: 0.11
+            #ki: 0.01
+            #kd: 0.01
+            kp: 0.05
+            ki: 0.001
+            kd: 0.0 #0.0075
+            #kp: 4.1
+            #ki: 0.9
+            #kd: 0
+    motor_right:
+        pwm: 100 # 100 Hz
+        max_power: 90
+        duty_cycle:
+            bais: 16
+        gpio:
+            in1: 17
+            in2: 27
+            pwm: 12
+        pid:
+            max_integral: 1500
+            #kp: 29
+            #ki: 0.0 #0.1
+            #kd: 0
+            #kp: 0.11
+            #ki: 0.01
+            #kd: 0.01
+            kp: 0.03
+            ki: 0.0009
+            kd: 0.0
+            #kp: 0.0
+            #ki: 0.0
+            #kd: 0
+
+###########################################
+# Mapping
+###########################################
+mapping:
+    enabled: true
+    occupancy_grid:
+        save_file_on_stop: true
+        width: 8 # 10 meters
+        height: 8 # 10 meters
+        resolution:
+            x: 0.2 #0.3
+            y: 0.2 #0.24
+        log_odds:
+            free: -0.4
+            obstacle: 0.85
+
+###########################################
+# Autonomous navigation
+# x-axis 30 cm
+# y-axis 24 cm
+###########################################
+navigation:
+    enabled: true
+    angle_threshold: 3
+    dist_threshold: 0.2
+    distance_multiplier: 2
+    # Rover dimensions. It represents the norm of of the two axis
+    dim:
+        w: 0.24
+        l: 0.30
+    waypoint:
+        run: true
+        items: 
+            - [10, 0] # 0deg
+            - [10, -10] # -90deg
+            - [0, -10]
+            - [0, 0]
+            - [10, 0]
+
+##################################################
+#
+# Autonomous exploration
+#
+exploration:
+    enabled: true
+    angle_threshold: 5
+    dist_threshold: 0.5
+    max_angle_gap_deg: 50 # Salle TP indoors because of hight rotation velocity
+    min_sector_size_deg: 60 # Salle TP indoors because of hight rotation velocity

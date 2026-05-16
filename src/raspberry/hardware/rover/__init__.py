@@ -9,6 +9,7 @@ import numpy as np
 
 from src.core.shared import MemorySharedDict
 from src.core.utils import clamp, dict_equal_fast, sign, wrap_angle
+from src.raspberry.config import Config
 from src.raspberry.exploration import ExplorationPlanner
 from src.raspberry.hardware.rover.motor import RMotor
 from src.raspberry.hardware.rover.odometry import WheelOdometry
@@ -274,37 +275,40 @@ class Rover:
                 return
             
             self.exec_command(payload, dt)
-        elif cmd_type == "mapping":
-            pass
-        elif cmd_type == "navigation":
-            # Here we receive wayPoints to follow
-            
-            waypoints = cmd.get("data")
-            self.navigation.set_waypoints(waypoints, contains_start=True)
-            
+        elif cmd_type == "switch_mode":
             # Wes top the rover
             self.exec_command(self.COMMAND_STOP)
             
-            # control mode tags
-            self.control_mode_change_start_time = time.perf_counter()
-            
-            # Plan to change the control mode after a few seconds
-            self.control_mode_next_mode = Rover.MODE_WAYPOINTS_NAVIGATION
-        elif cmd_type == "switch_mode":
             payload = cmd.get("data")
-            if payload.get("new_mode") == "navigation":
-                pass
-            elif payload.get("new_mode") == "mapping":
-                pass
-            elif payload.get("new_mode") == "exploration":
-                pass
+            if payload.get("mode") == "manual":
+                self.switch_control_mode(Rover.MODE_MANUAL_NAVIGATION)
+                self.logger.info("Control Mode switching to manual mode")
+            elif payload.get("mode") == "waypoint":
+                waypoints = payload.get("path")
+                
+                if waypoints is None:
+                    cfg = Config()
+                    
+                    if cfg.navigation.waypoint.run:
+                        self.navigation.set_waypoints(cfg.navigation.waypoint.items)
+                        self.logger.warn("Path is None. But Default Squared Waypoints has been loaded.")
+                    else:
+                        # Tells the remote that there is an error
+                        self.logger.error("Waypoint mode: Path is None")
+                else:
+                    self.navigation.set_waypoints(waypoints, contains_start=True)
+                    self.switch_control_mode(Rover.MODE_WAYPOINTS_NAVIGATION)
+                    self.logger.info("Control Mode switching to waypoints mode")
+            elif payload.get("mode") == "autonomous":
+                self.switch_control_mode(Rover.MODE_AUTONOMOUS_EXPLORATION)
+                self.logger.info("Control Mode switching to autonomous mode")
             
     def switch_control_mode(self, mode):
         # control mode tags
         self.control_mode_change_start_time = time.perf_counter()
             
         # Plan to change the control mode after a few seconds
-        self.control_mode_next_mode = Rover.MODE_WAYPOINTS_NAVIGATION
+        self.control_mode_next_mode = mode
             
             
     def change_direction(self, cmd):
@@ -392,16 +396,13 @@ class Rover:
     def update(self, dt):
         """
         Main loop
-        """        
-        if self.last_command is None:
-            return
+        """
         
         ########################################
         #
         # Self state change
         # We are about to change mode
         if self.control_mode_next_mode is not None:
-            
             now = time.perf_counter()
             if self.control_mode_change_start_time is not None:
                 if now - self.control_mode_change_start_time > 5:
@@ -411,6 +412,10 @@ class Rover:
                     # We erase
                     self.control_mode_next_mode = None
                     self.exec_command(self.COMMAND_FORWARD)
+                    self.logger.info("Mode switched successfully.")
+        
+        if self.control_mode is None or self.last_command is None:
+            return
         
         # If we already stopped, we just return
         #print(self.shared_state["stop"])
@@ -505,7 +510,7 @@ class Rover:
             
             if explorer_state in (ExplorationPlanner.STATE_MOVE_FORWARD, ExplorationPlanner.STATE_NONE):
                 if obstacle_detected:
-                    print("Obstacle detected")
+                    self.logger.info("Obstacle has been detected")
                     self.exec_command(self.COMMAND_STOP)
                     self._stopped = False
 
@@ -565,8 +570,10 @@ class Rover:
                     
                         self.theta_target = np.rad2deg(theta_target)
                         self.explorer.state = ExplorationPlanner.STATE_OBSTACLE_AVOIDING_ROTATE
+                        
+                        self.logger.info(f"Avoid obstacle: Target Heading {self.theta_target}°")
                     else:
-                        self.logger.info("No escape direction")
+                        self.logger.error("No escape direction")
                         self.explorer.reset_search_area()
                     return
                 else:
