@@ -556,16 +556,17 @@ class Rover:
                 theta_target, theta_error, is_clear = self.explorer.search_open_area(self.command_theta)
                 print(f"theta_error={theta_error}, is_clear={is_clear}")
                 
-                if is_clear:
-                    print(f"theta_target={np.rad2deg(theta_target)}")
-                    self.exec_command(self.COMMAND_STOP)
-                    time.sleep(1)
-                    self._stopped = False
-                    
+                if is_clear and theta_target:
                     if theta_target is not None:
+                        print(f"theta_target={np.rad2deg(theta_target)}")
+                        self.exec_command(self.COMMAND_STOP)
+                        time.sleep(1)
+                        self._stopped = False
+                    
                         self.theta_target = np.rad2deg(theta_target)
                         self.explorer.state = ExplorationPlanner.STATE_OBSTACLE_AVOIDING_ROTATE
                     else:
+                        self.logger.info("No escape direction")
                         self.explorer.reset_search_area()
                     return
                 else:

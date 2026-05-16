@@ -131,12 +131,12 @@ def main():
             {
                 'name': cfg.ultra_sounds.left.name,  "key": cfg.ultra_sounds.left.key,
                 'trig': cfg.ultra_sounds.left.gpio.trig, 'echo': cfg.ultra_sounds.left.gpio.echo,
-                "angle_offset": -np.pi/2
+                "angle_offset": np.pi/2
             },
             {
                 'name': cfg.ultra_sounds.right.name,  "key": cfg.ultra_sounds.right.key,
                 'trig': cfg.ultra_sounds.right.gpio.trig, 'echo': cfg.ultra_sounds.right.gpio.echo,
-                "angle_offset": np.pi/2
+                "angle_offset": -np.pi/2
             },
             #{'name': 'Front', "key": "u_f", 'trig': 20, 'echo': 21},
             #{'name': 'Right', "key": "u_r", 'trig': 26, 'echo': 7}, # NOTE: Have to disable SPI in order to add interruption to the pin 7 an SPI PIN
@@ -224,7 +224,7 @@ def main():
     rover = Rover(
         navigation=rover_navigation,
         explorer=rover_explorer,
-        control_mode=Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
+        control_mode=Rover.MODE_MANUAL_NAVIGATION, #Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
         base_rotation_velocity=cfg.rover.velocity_rotate,
         swivel_velocity_pwm=cfg.rover.swivel_velocity_pwm,
