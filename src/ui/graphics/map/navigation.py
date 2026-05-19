@@ -1,56 +1,101 @@
+import logging
+import multiprocessing
 import random
 
-from PyQt6.QtWidgets import QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPainter, QColor, QPen, QImage
 
 from src.ui.graphics.map.map import MapGridWidget, MapControlWidget
 
-
-class MapNavigationDialog(QDialog):
-    def __init__(self, pos_map: MapControlWidget, grid_map: MapGridWidget, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        self.setWindowTitle("Acquisition - Sensors Parameters")
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
-        
-        main_layout = QVBoxLayout()
-        
-        map = MapNavigationWidget(pos_map=pos_map, grid_map=grid_map)
-        main_layout.addWidget(map)
-        
-        
-        self.setLayout(main_layout)
-        
-
-
-class MapNavigationWidget(QWidget):
+class MapNavigationControlWidget(QWidget):
     """
     Combines the grid map and free map and add a controls
     panel at the left
     """
     
-    def __init__(self, pos_map: MapControlWidget, grid_map: MapGridWidget,  *args, **kwargs):
+    def __init__(self, grid_map: MapGridWidget, command_sent_data_queue: multiprocessing.Queue,  *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.setWindowTitle("Mapping Navigation Control")
         
         layout = QHBoxLayout()
         
+        self.grid_map = grid_map
+        self.computed_waypoints = None
+        self.command_sent_data_queue = command_sent_data_queue
+        
         # Maps
         map_layout = QVBoxLayout()
-        
-        map_layout.addWidget(pos_map)
-        map_layout.addSpacing(10)
         map_layout.addWidget(grid_map)
         
         layout.addLayout(map_layout)
         
         # Controls
-        control_widget = ControlPanel()
+        self.control_widget = ControlPanel()
         layout.addSpacing(10)
-        layout.addWidget(control_widget)
+        layout.addWidget(self.control_widget)
         
         self.setLayout(layout)
         
+        self.control_widget.btn_apply_threshold.clicked.connect(self.slot_apply_threshold_on_grid)
+        self.control_widget.btn_astar.clicked.connect(self.slot_compute_path_to_goal)
+        self.control_widget.btn_run_waypoints.clicked.connect(self.slot_send_waypoint_to_robot)
+        self.control_widget.btn_reset_grid.clicked.connect(self.slot_reset_grid)
+        
+    def slot_apply_threshold_on_grid(self):
+        pass
+    
+    def slot_reset_grid(self):
+        self.grid_map.reset() 
+    
+    def slot_compute_path_to_goal(self):
+        goal_point = self.control_widget.goal_input.text()
+        
+        try:
+            self.computed_waypoints =  self.grid_map.show_path_to(
+                goal=[int(item.strip()) for item in goal_point.split(",")],
+                threshold=int(self.control_widget.threshold_input.text())
+             )
+            
+        except Exception as e:
+            logging.exception("[MapNavigationControl] Exception occured")
+            
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)  # Set the icon to "Error"
+            msg.setWindowTitle("Error")
+            msg.setText("Something went wrong!")
+            msg.setInformativeText("Please check your input and try again. " + f"\n\n{e}")
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+            
+    def slot_send_waypoint_to_robot(self):
+        if self.computed_waypoints is None:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)  # Set the icon to "Error"
+            msg.setWindowTitle("Error")
+            msg.setText("Something went wrong!")
+            msg.setInformativeText("No ways has been computed")
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+        else:
+            try:
+                self.command_sent_data_queue.put({
+                    "topic": "slam/rover/commands/remote",
+                    "payload":  {"type": "navigation", "data": self.computed_waypoints}
+                })
+            except Exception as e:
+                logging.exception("[MapNavigationControl] Exception occured")
+            
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Icon.Critical)  # Set the icon to "Error"
+                msg.setWindowTitle("Error")
+                msg.setText("Something went wrong!")
+                msg.setInformativeText("Please check your input and try again. " + f"\n\n{e}")
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg.exec()
+        
+    
+    
     def closeEvent(self, a0):
         print("Closed")
         return super().closeEvent(a0)
@@ -76,7 +121,10 @@ class ControlPanel(QWidget):
 
         for cb in [self.cb_grid, self.cb_robot, self.cb_path, self.cb_obstacles]:
             cb.setChecked(True)
-            map_layout.addWidget(cb)
+            #map_layout.addWidget(cb)
+            
+        self.btn_reset_grid = QPushButton("Reset Grid")
+        map_layout.addWidget(self.btn_reset_grid)
 
         layout.addWidget(map_section)
 
@@ -87,23 +135,24 @@ class ControlPanel(QWidget):
 
         path_layout.addWidget(QLabel("PATH SETTINGS"))
 
-        self.start_input = QLineEdit("5,5")
         self.goal_input = QLineEdit("15,20")
-
-        path_layout.addWidget(QLabel("Start (i,j)"))
-        path_layout.addWidget(self.start_input)
+        self.threshold_input = QLineEdit("1")
 
         path_layout.addWidget(QLabel("Goal (i,j)"))
         path_layout.addWidget(self.goal_input)
+        
+        path_layout.addWidget(QLabel("Occupancy Treshold"))
+        path_layout.addWidget(self.threshold_input)
 
-        btn_gen = QPushButton("Generate Obstacles")
-        btn_astar = QPushButton("Compute A*")
-
-        #btn_gen.clicked.connect(self.map.generate_obstacles)
-        #btn_astar.clicked.connect(self.compute_path)
-
-        path_layout.addWidget(btn_gen)
-        path_layout.addWidget(btn_astar)
+        self.btn_apply_threshold = QPushButton("Apply Treshold")
+        self.btn_astar = QPushButton("Compute A*")
+        self.btn_run_waypoints = QPushButton("Run WayPoint")
+        
+        path_layout.addWidget(self.btn_apply_threshold)
+        path_layout.addSpacing(5)
+        path_layout.addWidget(self.btn_astar)
+        path_layout.addSpacing(15)
+        path_layout.addWidget(self.btn_run_waypoints)
 
         layout.addWidget(path_section)
 

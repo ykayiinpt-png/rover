@@ -34,18 +34,18 @@ class UltraSoundsCharts(QWidget):
         
         # Temperature vs time dynamic plot
         self.plots_graph_grid = pg.GraphicsLayoutWidget()   
-        self.plots_graph_grid.setBackground("#1E1E1E")
+        self.plots_graph_grid.setBackground("transparent")
         
         sensors_positions = ["f", "b", "l", "r"]
         
         pen_width = 1
         self.pens = {
-            "f": pg.mkPen(color="#4EC9B0", width=pen_width),
-            "b": pg.mkPen(color="#DCDCAA", width=pen_width),
-            "l": pg.mkPen(color="#C586C0", width=pen_width),
-            "r": pg.mkPen(color="#B5CEA8", width=pen_width)
+            "f": pg.mkPen(color="red", width=pen_width),
+            "b": pg.mkPen(color="blue", width=pen_width),
+            "l": pg.mkPen(color="black", width=pen_width),
+            "r": pg.mkPen(color="violet", width=pen_width)
         }
-        styles = {"color": "white", "font-size": "10px"}
+        styles = {"color": "black", "font-size": "10px"}
         #self.plot_graph.setLabel("left", "cm", **styles)
         #self.plot_graph.setLabel("bottom", "Time (s)", **styles)
         

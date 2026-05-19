@@ -4,9 +4,7 @@ import multiprocessing
 import os
 import sys
 
-from src.ui.graphics.controls.process import RaspberryCommandsAckProcess
-from src.ui.graphics.process import RaspberryDataExchangeProcess
-from src.ui.log import LogWidget
+from src.raspberry.config import Config
 
 if sys.platform.lower() == "win32" or os.name.lower() == "nt":
         print("Setting event policy...")
@@ -15,7 +13,12 @@ if sys.platform.lower() == "win32" or os.name.lower() == "nt":
     
 
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt
 
+
+from src.ui.graphics.controls.process import RaspberryCommandsAckProcess
+from src.ui.graphics.process import RaspberryDataExchangeProcess
+from src.ui.log import LogWidget
 from src.ui import MainWindow
 from src.ui.video.process import VstreamClientProcess
 
@@ -28,10 +31,13 @@ logging.basicConfig(
 #logging.getLogger("aioice").setLevel(logging.DEBUG)
 #logging.getLogger("aiortc").setLevel(logging.DEBUG)
 
-def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
+def main():
+    cfg = Config()
+     
     video_frame_compute_result_queue = None
     map_receive_data_queue = None
     mapping_state_receive_data_queue = None
+    mapping_grid_data_receive_queue = None
     sensors_ultrasound_data_queue = None
     sensors_imu_data_queue = None
     odometry_data_queue = None
@@ -42,6 +48,8 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
     raspberry_data_process = None
     commands_process = None
     
+    log_received_queue=None
+    
     
     
     window = None
@@ -49,6 +57,7 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
     try:
         # Queus
         video_frame_compute_result_queue = multiprocessing.Queue(maxsize=1000)
+        mapping_grid_data_receive_queue = multiprocessing.Queue(maxsize=2000)
         map_receive_data_queue = multiprocessing.Queue(maxsize=1000)
         mapping_state_receive_data_queue = multiprocessing.Queue(maxsize=1000)
         sensors_ultrasound_data_queue = multiprocessing.Queue(maxsize=1000)
@@ -57,8 +66,11 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         commands_send_queue = multiprocessing.Queue(maxsize=1000)
         commands_receive_queue = multiprocessing.Queue(maxsize=1000)
         
+        log_received_queue = multiprocessing.Queue(maxsize=1000)
+        
         
         app = QApplication(sys.argv)
+        app.styleHints().setColorScheme(Qt.ColorScheme.Light)
                 
         
 
@@ -69,6 +81,7 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
             # Map data queues,
             map_receive_data_queue=map_receive_data_queue,
             mapping_state_receive_data_queue=mapping_state_receive_data_queue,
+            mapping_grid_data_queue=mapping_grid_data_receive_queue,
             
             # Sensor data queues
             sensors_ultrasound_data_queue=sensors_ultrasound_data_queue,
@@ -77,41 +90,49 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
             
             # Commands
             command_sent_data_queue=commands_send_queue,
-            command_receive_data_queue=commands_receive_queue,            
+            command_receive_data_queue=commands_receive_queue,
+            
+            # Video
+            video_stream_enabled=cfg.video.enabled,
+            video_stream_url=cfg.video.stream.url,
+            
+            log_received_queue=log_received_queue          
         )
         
         # Start the video frame processing
-        if "video" in features:
-            video_stream_process =  VstreamClientProcess(
-                compute_result_queue=video_frame_compute_result_queue,
-                io_url=io_url
-            ) 
+        # if "video" in cfg.features:
+        #     video_stream_process =  VstreamClientProcess(
+        #         compute_result_queue=video_frame_compute_result_queue,
+        #         io_url=io_url
+        #     ) 
             # RtcTrackClientProcess(compute_result_queue=result_queue)
         
-        if "commands" in features:
+        if "commands" in cfg.features:
             commands_process = RaspberryCommandsAckProcess(
-                host=mqtt_host, port=mqtt_port,
+                host=cfg.mqtt.host, port=cfg.mqtt.port,
                 send_queue=commands_send_queue,
                 receive_queue=commands_receive_queue
             )
             
-        if "data" in features:
+        if "data" in cfg.features:
             raspberry_data_process = RaspberryDataExchangeProcess(
-                host=mqtt_host, port=mqtt_port,
+                host=cfg.mqtt.host, port=cfg.mqtt.port,
                 map_receive_data_queue=map_receive_data_queue,
                 mapping_state_receive_data_queue=mapping_state_receive_data_queue,
+                mapping_grid_data_queue=mapping_grid_data_receive_queue,
                 sensors_ultrasound_data_queue=sensors_ultrasound_data_queue,
                 sensors_imu_data_queue=sensors_imu_data_queue,
-                odometry_data_queue=odometry_data_queue
+                odometry_data_queue=odometry_data_queue,
+                log_received_queue=log_received_queue
             )
         
-        if "video" in features:
-            video_stream_process.start()
+        # if "video" in features:
+        #    video_stream_process.start()
             
-        if "data" in features:
+        if "data" in cfg.features:
             raspberry_data_process.start()
             
-        if "commands" in features:
+        if "commands" in cfg.features:
             commands_process.start()
         
         window.show()
@@ -129,6 +150,7 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         
         map_receive_data_queue.close()
         mapping_state_receive_data_queue.close()
+        mapping_grid_data_receive_queue.close()
         
         sensors_ultrasound_data_queue.close()
         sensors_imu_data_queue.close()
@@ -140,6 +162,7 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         
         map_receive_data_queue.join_thread()
         mapping_state_receive_data_queue.join_thread()
+        mapping_grid_data_receive_queue.join_thread()
         
         
         commands_send_queue.close()
@@ -147,24 +170,28 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
         commands_receive_queue.join_thread()
         commands_send_queue.join_thread()
         
+        log_received_queue.close()
+        log_received_queue.join_thread()
+        
+        
         # Stop the computing process
-        if "video" in features:
-            try:
-                if video_stream_process is not None and video_stream_process.is_alive():
-                    video_stream_process.terminate()
-                    logging.info('[AppUI] teminate computing process')
-                    video_stream_process.join(timeout=50)
-                    logging.info('[AppUI] joined computing process')
+        # if "video" in cfg.features:
+        #     try:
+        #         if video_stream_process is not None and video_stream_process.is_alive():
+        #             video_stream_process.terminate()
+        #             logging.info('[AppUI] teminate computing process')
+        #             video_stream_process.join(timeout=50)
+        #             logging.info('[AppUI] joined computing process')
 
 
-                    if video_stream_process.is_alive():
-                        logging.warning('[AppUI] killing computing process')
-                        video_stream_process.kill()   
-            except Exception as e:
-                logging.exception("Exception occured while stopping")
+        #             if video_stream_process.is_alive():
+        #                 logging.warning('[AppUI] killing computing process')
+        #                 video_stream_process.kill()   
+        #     except Exception as e:
+        #         logging.exception("Exception occured while stopping")
             
         
-        if "data" in features:
+        if "data" in cfg.features:
             try:
                 if raspberry_data_process is not None and raspberry_data_process.is_alive():
                     raspberry_data_process.terminate()
@@ -179,7 +206,7 @@ def main(io_url: str, mqtt_host: str, mqtt_port: int, features: list[str]):
             except Exception as e:
                 logging.exception("Exception occured while stopping")
                 
-        if "commands" in features:
+        if "commands" in cfg.features:
             try:
                 if commands_process is not None and commands_process.is_alive():
                     commands_process.terminate()
@@ -199,41 +226,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument(
-        "--ws_uri",
+        "--conf_path",
         type=str,
-        default="http://127.0.0.1:8000",
-        help="Host (e.g. http://127.0.0.1:8000)"
-    )
-    
-    parser.add_argument(
-        "--mqtt_host",
-        type=str,
-        default="127.0.0.1",
-        help="MQTT Host (e.g. 127.0.0.1)"
-    )
-
-    parser.add_argument(
-        "--mqtt_port",
-        type=int,
-        default=1883,
-        help="MQTT Port number (default: 1883)"
-    )
-    
-    parser.add_argument(
-        "--feature",
-        type=str,
-        action='append',
-        choices=["none", "video", "data", "commands"],
-        required=True,
-        help="Features to activate, video processing, data excahnge and remote commands"
+        default="config_ui.local.yml",
+        help="Path to the config file a config_ui.yml file"
     )
     
     args = parser.parse_args()
     try:
-        main(
-            io_url=args.ws_uri,
-            mqtt_host=args.mqtt_host, mqtt_port=args.mqtt_port,
-            features=args.feature)
+        cfg = Config(config_path=args.conf_path)
+        
+        main()
     except KeyboardInterrupt:
         logging.info("KeyboardInterrupt received, exiting...")
     except Exception as e:

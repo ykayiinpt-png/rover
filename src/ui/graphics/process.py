@@ -18,15 +18,19 @@ class RaspberryDataAckMqtt(RThread):
     """
     
     def __init__(self,
+                log_received_queue: multiprocessing.Queue,
                 map_receive_data_queue: multiprocessing.Queue,
                 mapping_state_receive_data_queue: multiprocessing.Queue,
+                mapping_grid_data_receive_queue: multiprocessing.Queue,
                 sensors_imu_data_queue: multiprocessing.Queue,
                 sensors_ultrasound_data_queue: multiprocessing.Queue,
                 odometry_data_queue: multiprocessing.Queue):
         super().__init__()
         
+        self.log_received_queue = log_received_queue
         self.map_receive_data_queue = map_receive_data_queue
         self.mapping_state_receive_data_queue = mapping_state_receive_data_queue
+        self.mapping_grid_data_receive_queue = mapping_grid_data_receive_queue
         self.sensors_ultrasound_data_queue = sensors_ultrasound_data_queue
         self.sensors_imu_data_queue = sensors_imu_data_queue
         self.odometry_data_queue = odometry_data_queue
@@ -88,6 +92,24 @@ class RaspberryDataAckMqtt(RThread):
                         if type(_payload) is dict:
                             self.mapping_state_receive_data_queue.put(_payload)
                             
+                    elif payload.get("topic") == "slam/rover/data/mapping/grid":
+                        data = {}
+                        _payload = payload.get("data")
+                        #print(_payload)
+                        
+                        if type(_payload) is dict:
+                            self.mapping_grid_data_receive_queue.put(_payload)
+                            #print("Added to queue")
+                    elif payload.get("topic") == "slam/logs":
+                        data = {}
+                        _payload = payload.get("data")
+                        #print(_payload)
+                        
+                        if type(_payload) is dict:
+                            self.log_received_queue.put(_payload)
+                            #print("Added to queue")
+                        
+                            
                     
                 
                 # TODO: push to map queue also
@@ -113,9 +135,11 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
     def __init__(self, host: str, port: int, 
                 map_receive_data_queue: multiprocessing.Queue,
                 mapping_state_receive_data_queue: multiprocessing.Queue,
+                mapping_grid_data_queue: multiprocessing.Queue,
                 sensors_imu_data_queue: multiprocessing.Queue,
                 sensors_ultrasound_data_queue: multiprocessing.Queue,
-                odometry_data_queue=multiprocessing.Queue,
+                odometry_data_queue: multiprocessing.Queue,
+                log_received_queue: multiprocessing.Queue,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -126,10 +150,13 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
         self.mqtt_client = None
         
         
+        self.log_received_queue = log_received_queue
+        
         self.data_queue = multiprocessing.Queue(maxsize=1000)
         
         self.map_receive_data_queue = map_receive_data_queue
         self.mapping_state_receive_data_queue = mapping_state_receive_data_queue
+        self.mapping_grid_data_queue = mapping_grid_data_queue
         
         self.sensors_ultrasound_data_queue = sensors_ultrasound_data_queue
         self.sensors_imu_data_queue = sensors_imu_data_queue
@@ -167,14 +194,20 @@ class RaspberryDataExchangeProcess(multiprocessing.Process):
                 
                 # Mapping
                 "slam/rover/data/mapping/state",
+                "slam/rover/data/mapping/grid",
+                
+                # Logging
+                "slam/logs"
             ],
             async_event_loop=loop
         )
         
         self.component = ThreadMqttComponent(
             RaspberryDataAckMqtt(
+                log_received_queue=self.log_received_queue,
                 map_receive_data_queue=self.map_receive_data_queue,
                 mapping_state_receive_data_queue=self.mapping_state_receive_data_queue,
+                mapping_grid_data_receive_queue=self.mapping_grid_data_queue,
                 sensors_ultrasound_data_queue=self.sensors_ultrasound_data_queue,
                 sensors_imu_data_queue=self.sensors_imu_data_queue,
                 odometry_data_queue=self.odometry_data_queue

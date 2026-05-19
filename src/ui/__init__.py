@@ -6,7 +6,7 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QToolBar, QVBoxLayout, QWidget
 
 from src.ui.detection import DetectionWidget
-from src.ui.graphics.map.navigation import MapNavigationDialog, MapNavigationWidget
+from src.ui.graphics.map.navigation import MapNavigationControlWidget
 from src.ui.graphics.controls.joystick import KeyboardJoystickDialog
 from src.ui.graphics.rover_state.velocity import RobotVelocityStateWidget
 from src.ui.log import LogWidget
@@ -14,6 +14,7 @@ from src.ui.graphics.map.map import MapControlWidget, MapGridWidget, MapWidget
 from src.ui.graphics.sensors.charts import SensorCharts
 from src.ui.menus import AccquisitionMenuSensorsParameters
 from src.ui.sidebar import Sidebar
+from src.ui.video.ffmpeg import FfmpegVideaoStreamWidget
 from src.ui.video.widgets import RtcTrackWidget
 
 
@@ -24,10 +25,17 @@ class MainWindow(QMainWindow):
                 sensors_imu_data_queue: multiprocessing.Queue,
                 odometry_data_queue: multiprocessing.Queue,
                 map_receive_data_queue: multiprocessing.Queue,
+                mapping_grid_data_queue: multiprocessing.Queue,
                 mapping_state_receive_data_queue: multiprocessing.Queue,
                 command_sent_data_queue: multiprocessing.Queue,
-                command_receive_data_queue: multiprocessing.Queue):
+                command_receive_data_queue: multiprocessing.Queue,
+                
+                log_received_queue: multiprocessing.Queue,
+                
+                video_stream_url:str, video_stream_enabled: bool):
         super().__init__()
+        
+        #self.bac
         
         # Objects
         self.keyboard_joystick_dialog = KeyboardJoystickDialog(
@@ -51,8 +59,26 @@ class MainWindow(QMainWindow):
         self.sensors_chart = SensorCharts(data_queue=sensors_ultrasound_data_queue)
         layout.addWidget(self.sensors_chart)
         
-        self.rtc_track_widget = RtcTrackWidget(parent=self, compute_queue=video_frame_compute_result_queue)
-        layout.addWidget(self.rtc_track_widget)
+        
+        # layout_rtc_ang_angle = QVBoxLayout()
+        
+        # self.rtc_track_widget = RtcTrackWidget(parent=self, compute_queue=video_frame_compute_result_queue)
+        # layout_rtc_ang_angle.addWidget(self.rtc_track_widget)
+        # layout_rtc_ang_angle.addWidget(QLabel(text="Orientation"))
+        # layout_rtc_ang_angle.addSpacing(3)
+        # layout_rtc_ang_angle.addWidget(self.rover_state_velocity.gauge)
+        #layout.addWidget(self.rtc_track_widget)
+        
+        layout_video_stream = QVBoxLayout()
+        self.ffmpeg_video_streamer_widget = FfmpegVideaoStreamWidget(
+            stream_url=video_stream_url, enabled=video_stream_enabled
+        )
+        print(self.ffmpeg_video_streamer_widget )
+        layout_video_stream.addWidget(self.ffmpeg_video_streamer_widget)
+        
+        layout_video_stream.addWidget(self.rover_state_velocity.gauge)
+        
+        layout.addLayout(layout_video_stream)
         
         layout_c = QVBoxLayout()
         layout_cb = QHBoxLayout()
@@ -65,7 +91,14 @@ class MainWindow(QMainWindow):
         )
         layout_c.addWidget(self.map_preview_widget)
         
-        self.grid_map = MapGridWidget()
+        self.grid_map = MapGridWidget(
+            grid_data_queue=mapping_grid_data_queue
+        )
+        
+        self.map_navig = MapNavigationControlWidget(
+            grid_map=self.grid_map,
+            command_sent_data_queue=command_sent_data_queue
+        )
         
         # Object Detection
         self.detection_objecs_widget =  DetectionWidget()
@@ -76,7 +109,9 @@ class MainWindow(QMainWindow):
         
         layout_cb.addLayout(layout_do_widget)
         
-        self.logs_widget = LogWidget()
+        self.logs_widget = LogWidget(
+            log_received_queue=log_received_queue
+        )
         layout_logs_widget = QVBoxLayout()
         layout_logs_widget.addWidget(QLabel(text="Logs"))
         layout_logs_widget.addSpacing(3)
@@ -157,11 +192,18 @@ class MainWindow(QMainWindow):
         if self.rover_state_velocity.isVisible():
             self.rover_state_velocity.hide()
             
+        if self.grid_map.isVisible():
+            self.grid_map.hide()
             
-        self.rtc_track_widget.stop()
+            
+        # self.rtc_track_widget.stop()
         self.sensors_chart.stop()
         self.rover_state_velocity.stop()
         self.map_preview_widget.stop()
+        self.grid_map.stop()
+        self.ffmpeg_video_streamer_widget.stop()
+        
+        self.logs_widget.stop()
         
         event.accept()
         
@@ -200,8 +242,9 @@ class MainWindow(QMainWindow):
         
     
     def slop_map_menu_open_full_map(self):
-        map_navig = MapNavigationDialog(grid_map=self.grid_map, pos_map=self.map_preview_widget)
-        map_navig.exec()
+        if not self.map_navig.isVisible():
+            self.map_navig.show()
+        
         
     def slop_map_menu_open_joystick(self):
         if not self.keyboard_joystick_dialog.isVisible():

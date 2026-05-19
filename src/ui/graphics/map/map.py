@@ -9,9 +9,12 @@ from typing import Deque
 import numpy as np
 import numpy as np
 import pyqtgraph as pg
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget, QApplication
+import matplotlib.cm as cm
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget, QApplication
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPalette, QPen, QBrush, QImage, QPolygonF
+
+from src.core.search import astar
 
 
 class MapSignals(QObject):
@@ -286,7 +289,7 @@ class MapWidgetQtPaint(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        painter.fillRect(self.rect(), QColor("white"))
+        painter.fillRect(self.rect(), QColor("black"))
         
         # ================= TEXT =================
         painter.setPen(QPen(QColor("blue")))
@@ -557,116 +560,201 @@ class MapControlWidget(QWidget):
         
     def stop(self):
         self.map_widget.stop()
+        
+################################
+# Map Grid view
+#
 
+class MapGridSignals(QObject):
+    grid = pyqtSignal(tuple)
+    
+class MapGridStateController(QThread):
+    def __init__(self,
+                 grid_data_queue: multiprocessing.Queue,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.signals = MapGridSignals()
+        self.stop_event = threading.Event()
+        self.grid_data_queue = grid_data_queue
+        
+    def run(self):
+        while not self.stop_event.is_set():
+            # Handle Imu data
+            if not self.grid_data_queue.empty():
+                data = self.grid_data_queue.get()
+                self.signals.grid.emit((data["dim"], data["cells"], data["robot"]))
+            time.sleep(0.1)
+        logging.info("[MapStateController] Thread ended")
+    
+    def stop(self):
+        self.stop_event.set()
 
 class MapGridWidget(QWidget):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, grid_data_queue: multiprocessing.Queue, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setFixedSize(440, 240)
+        self.setFixedSize(490, 490)
+
+        self.controller = MapGridStateController(
+            grid_data_queue=grid_data_queue
+        )
+
+        self.draw_lock = threading.Lock()
 
         # ================= GRID CONFIG =================
-        self.rows = 20
-        self.cols = 30
+        self.rows = 70
+        self.cols = 70
 
         self.cell_w = self.width() // self.cols
         self.cell_h = self.height() // self.rows
 
-        # ================= STATIC GRID IMAGE =================
+        # ================= STATIC GRID =================
         self.grid_image = QImage(self.width(), self.height(), QImage.Format.Format_RGB32)
         self.grid_image.fill(QColor(245, 245, 245))
         self.build_static_grid()
+        self.cmap = cm.get_cmap("gray")
 
-        # ================= DYNAMIC CELLS =================
-        # (i, j) -> state
-        # 1 = robot, 2 = obstacle, 3 = path
-        self.cells = {}
+        # ================= DYNAMIC GRID BUFFER =================
+        # 0 = empty
+        # 1 = robot
+        # 2 = obstacle
+        # 3 = path
+        # 4 = probability overlay (optional)
+        self.grid = [[0.6 for _ in range(self.cols)] for _ in range(self.rows)]
 
         # ================= ROBOT =================
-        self.robot = (10, 10)
+        self.robot = (0, 0)
 
-        # ================= OBSTACLES =================
-        for _ in range(80):
-            i = random.randint(0, self.rows - 1)
-            j = random.randint(0, self.cols - 1)
-            self.cells[(i, j)] = 2
-
-        # ================= TIMER =================
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_simulation)
-        self.timer.start(200)
+        # ================= SIGNAL =================
+        self.controller.signals.grid.connect(self.slot_update_grid)
+        self.controller.start()
 
     # =========================================================
-    # BUILD STATIC GRID (DONE ONCE)
+    # STATIC GRID
     # =========================================================
     def build_static_grid(self):
         painter = QPainter(self.grid_image)
-
-        pen = QPen(QColor(200, 200, 200), 1)
-        painter.setPen(pen)
+        painter.setPen(QPen(QColor(0, 0, 0), 1))
 
         for i in range(self.rows):
+            y = i * self.cell_h
             for j in range(self.cols):
                 x = j * self.cell_w
-                y = i * self.cell_h
                 painter.drawRect(x, y, self.cell_w, self.cell_h)
 
         painter.end()
 
-    # =========================================================
-    # SIMULATION (GRID LOGIC)
-    # =========================================================
-    def update_simulation(self):
-        i, j = self.robot
+    def slot_update_grid(self, grid_data):
+        dim, data, rb = grid_data
+        src_h, src_w = dim
 
-        # random movement
-        di, dj = random.choice([(1,0), (-1,0), (0,1), (0,-1)])
+        scale_y = self.rows / src_h
+        scale_x = self.cols / src_w
+        
+        max_val = 5
 
-        ni, nj = i + di, j + dj
+        with self.draw_lock:
+            #print("Gota data do map")
+            for x, y, p in data:
+                i = int(y * scale_y)
+                j = int(x * scale_x)
 
-        # bounds check
-        if 0 <= ni < self.rows and 0 <= nj < self.cols:
-
-            # avoid obstacles
-            if self.cells.get((ni, nj)) != 2:
-
-                # mark path
-                self.cells[(i, j)] = 3
-
-                self.robot = (ni, nj)
+                if 0 <= i < self.rows and 0 <= j < self.cols:
+                    #p = 1 - 1 / (1 + np.exp(p))
+                    #self.grid[y][x] = p # min(255, self.grid[i][j] + int(p * 255))
+                    #print(x, y, p, 1 - (p + max_val) / (2 * max_val))
+                    # Normalize the value
+                    self.grid[y][x] = 1 - (p + max_val) / (2 * max_val)
+                    
+                    #print(self.grid[i][j], int(255 * (1-self.grid[i][j])))
+                #print("\n\n")
+                    
+            self.robot = [rb[0], rb[1]]
 
         self.update()
+        
+    def show_path_to(self, goal, threshold):
+        """
+        Computes a path from the robot position to goal and updates the grid.
+        goal: (i,j)
+        
+        :retuns path list(tuple): the path from the current robot position to
+        the destination point
+        """
+        # Make a copy of the grid for pathfinding (obstacles > 1)
+        grid_copy = np.array(self.grid, dtype=float)
 
-    # =========================================================
-    # DRAW (OPTIMIZED)
-    # =========================================================
+        path = astar(grid_copy, self.robot, goal, threshold=threshold)
+
+        if path is None:
+            print("No path found")
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Information)
+            msg.setWindowTitle("Information")
+            msg.setText("WayPoints")
+            msg.setInformativeText("No path has been found")
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+            return None
+
+        with self.draw_lock:
+            # mark the path in the grid
+            for i, j in path:
+                if (i, j) != self.robot:  # don't overwrite robot
+                    self.grid[i][j] = 3
+
+        self.update()
+        
+        return path
+    
+    def reset(self):
+        with self.draw_lock:
+            self.grid = [[0.6 for _ in range(self.cols)] for _ in range(self.rows)]
+            self.robot = [0, 0]
+            self.update()
+
     def paintEvent(self, event):
         painter = QPainter(self)
 
-        # ================= STATIC GRID (FAST BLIT) =================
         painter.drawImage(0, 0, self.grid_image)
+        
+        # TODO: Optimize this double for loop
 
-        # ================= DYNAMIC CELLS =================
-        for (i, j), state in self.cells.items():
-
-            x = j * self.cell_w
+        for i in range(self.rows):
             y = i * self.cell_h
+            for j in range(self.cols):
+                x = j * self.cell_w
+                v = self.grid[i][j]
 
-            if state == 2:
-                color = QColor(0, 0, 0)        # obstacle
-            elif state == 3:
-                color = QColor(255, 255, 0)    # path
-            else:
-                continue
+                if v == -1:
+                    continue
+                if v == 2000:
+                    painter.fillRect(x, y, self.cell_w, self.cell_h, QColor(0, 255, 0))
+                elif v == 3000:
+                    # Path computed
+                    painter.fillRect(x, y, self.cell_w, self.cell_h, QColor(0, 0, 255))
+                else:  # probability overlay threshold
+                    gray = int(np.clip(v, 0.0, 1.0) * 255)
+                    painter.fillRect(
+                        x, y, 
+                        self.cell_w, self.cell_h,
+                        QColor(gray, gray, gray+50, 255)
+                    )
+                    
 
-            painter.fillRect(x, y, self.cell_w, self.cell_h, color)
-
-        # ================= ROBOT =================
+        # robot
         ri, rj = self.robot
-        x = rj * self.cell_w
-        y = ri * self.cell_h
-
         painter.fillRect(
-            x, y,
-            self.cell_w, self.cell_h,
+            rj * self.cell_w,
+            ri * self.cell_h,
+            self.cell_w,
+            self.cell_h,
             QColor(255, 0, 0)
         )
+        
+    def stop(self):
+        self.controller.stop()
+        self.controller.requestInterruption()
+        self.controller.quit()
+        self.controller.wait()
+    

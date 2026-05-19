@@ -1,0 +1,15 @@
+mqtt:
+    host: 192.168.137.1
+    port: 1883
+
+features: 
+    - "data"
+    - commands
+
+###############################
+# Video
+###############################
+video:
+    enabled: true
+    stream:
+        url: "udp://192.168.137.1:5004"

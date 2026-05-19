@@ -88,9 +88,9 @@ class RtcTrackWidget(QWidget):
         layout.addSpacing(3)
         layout.addWidget(self.raw_image_track_label)
         layout.addSpacing(6)
-        layout.addWidget(QLabel(text="Camera - Processing"))
-        layout.addSpacing(3)
-        layout.addWidget(self.processed_image_track_label)
+        #layout.addWidget(QLabel(text="Camera - Processing"))
+        #layout.addSpacing(3)
+        #layout.addWidget(self.processed_image_track_label)
         
         # Bindings
         self.controller.signals.image.connect(self.update_frame)

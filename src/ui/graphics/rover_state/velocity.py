@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import QApplication, QDialog, QWidget, QVBoxLayout, QHBoxLa
 from PyQt6.QtCore import QObject, QThread, QTimer, Qt, pyqtSignal
 import pyqtgraph as pg
 
+pg.setConfigOption('background', 'w')  # 'w' for white
+pg.setConfigOption('foreground', 'k')  # 'k' for black
 
 class ZRotationWidget(pg.GraphicsLayoutWidget):
     """
@@ -23,21 +25,21 @@ class ZRotationWidget(pg.GraphicsLayoutWidget):
         self.plot.setAspectLocked()
         self.plot.hideAxis('left')
         self.plot.hideAxis('bottom')
-        self.setBackground("#1E1E1E")
+        self.setBackground("transparent")
         #self.plot.hideAxes()
 
         # arc demi cercle
         theta = np.linspace(0, 2*np.pi, 100)
         self.x_arc = np.cos(theta)
         self.y_arc = np.sin(theta)
-        self.plot.plot(self.x_arc, self.y_arc, pen=pg.mkPen(width=2))
+        self.plot.plot(self.x_arc, self.y_arc, pen=pg.mkPen("black", width=2))
 
         # Needles
-        self.needle1 = self.plot.plot([0, 1], [0, 0], pen=pg.mkPen('g', width=3))
-        self.needle2 = self.plot.plot([0, 1], [0, 0], pen=pg.mkPen('y', width=3))
+        self.needle1 = self.plot.plot([0, 1], [0, 0], pen=pg.mkPen('r', width=3))
+        self.needle2 = self.plot.plot([0, 1], [0, 0], pen=pg.mkPen('k', width=3))
         
         # Main origin
-        self.plot.plot([0, 0], [0, 1], pen=pg.mkPen('w', width=3))
+        self.plot.plot([0, 0], [0, 1], pen=pg.mkPen('gray', width=3))
 
         self.label = pg.TextItem("", anchor=(0.5, 0))
         self.plot.addItem(self.label)
@@ -147,7 +149,7 @@ class RobotVelocityStateWidget(QWidget):
         # ===== LEFT COLUMN =====
         left_layout = QVBoxLayout()
 
-        styles = {"color": "white", "font-size": "10px" }
+        styles = {"color": "black", "font-size": "10px" }
         # plot Vitesse de rotation
         self.theta_plot1 = pg.PlotWidget(title="Z-Gyro Velocity")
         self.theta_plot1.setFixedWidth(400)
@@ -155,9 +157,9 @@ class RobotVelocityStateWidget(QWidget):
         self.theta_plot1.setLabel("left", "rad/s", **styles)
         self.theta_plot1.setLabel("bottom", "time", **styles)
         self.theta_plot1.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
-        self.theta_plot1.setBackground("#1E1E1E")
+        self.theta_plot1.setBackground("transparent")
         self.theta_plot1.addLegend()
-        self.z_gyro_accl_curve = self.theta_plot1.plot(pen='c')
+        self.z_gyro_accl_curve = self.theta_plot1.plot(pen='k')
         self.theta_plot1_label = QLabel(self, text="--")
         
         # Plot theta command and target
@@ -167,10 +169,10 @@ class RobotVelocityStateWidget(QWidget):
         self.theta_plot2.setLabel("left", "deg/s", **styles)
         self.theta_plot2.setLabel("bottom", "time", **styles)
         self.theta_plot2.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
-        self.theta_plot2.setBackground("#1E1E1E")
+        self.theta_plot2.setBackground("transparent")
         self.theta_plot2.addLegend()
         self.theta_command_plot = self.theta_plot2.plot(pen="r", name="Command")
-        self.theta_target_plot = self.theta_plot2.plot(pen="g", name="Target")
+        self.theta_target_plot = self.theta_plot2.plot(pen="k", name="Target")
         self.theta_plot2_label = QLabel(self, text="--")
 
         left_layout.addWidget(self.theta_plot1)
@@ -180,9 +182,9 @@ class RobotVelocityStateWidget(QWidget):
 
         # gauge
         self.gauge = ZRotationWidget()
-        self.gauge.setFixedWidth(400)
+        self.gauge.setFixedWidth(300)
         self.gauge.setFixedHeight(250)
-        left_layout.addWidget(self.gauge)
+        #left_layout.addWidget(self.gauge)
 
         # ===== Middle COLUMN =====
         middle_layout = QVBoxLayout()
@@ -190,25 +192,25 @@ class RobotVelocityStateWidget(QWidget):
         self.plot1 = pg.PlotWidget(title="Wheel L")
         self.plot1.setFixedWidth(400)
         self.plot1.setFixedHeight(250)
-        self.plot1.setBackground("#1E1E1E")
+        self.plot1.setBackground("transparent")
         self.plot1.addLegend()
         self.plot1.setLabel("left", "RPM/s", **styles)
         self.plot1.setLabel("bottom", "time", **styles)
         self.plot1.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
         self.wheel_left_command = self.plot1.plot(pen='r', name="Command")
-        self.wheel_left_target = self.plot1.plot(pen='g', name="Target")
+        self.wheel_left_target = self.plot1.plot(pen='k', name="Target")
         self.plot1_label = QLabel(self, text="--")
 
         self.plot2 = pg.PlotWidget(title="Wheel R")
         self.plot2.setFixedWidth(400)
         self.plot2.setFixedHeight(250)
-        self.plot2.setBackground("#1E1E1E")
+        self.plot2.setBackground("transparent")
         self.plot2.addLegend()
         self.plot2.setLabel("left", "RPM/s", **styles)
         self.plot2.setLabel("bottom", "time", **styles)
         self.plot2.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
-        self.wheel_right_command = self.plot2.plot(pen='y', name="Command")
-        self.wheel_right_target = self.plot2.plot(pen='m', name="Target")
+        self.wheel_right_command = self.plot2.plot(pen='r', name="Command")
+        self.wheel_right_target = self.plot2.plot(pen='k', name="Target")
         self.plot2_label = QLabel(self, text="--")
 
 
@@ -224,20 +226,20 @@ class RobotVelocityStateWidget(QWidget):
         self.plot3 = pg.PlotWidget(title="PWM=100Hz Duty Cycle Left")
         self.plot3.setFixedWidth(400)
         self.plot3.setFixedHeight(250)
-        self.plot3.setBackground("#1E1E1E")
+        self.plot3.setBackground("transparent")
         self.plot3.addLegend()
         self.plot3.setLabel("left", "%", **styles)
         self.plot3.setLabel("bottom", "time", **styles)
         self.plot3.setAxisItems({'bottom': pg.DateAxisItem(orientation='bottom')})
-        self.pwm_left_plot = self.plot3.plot(pen='r', name="L")
-        self.pwm_right_plot = self.plot3.plot(pen='g', name="R")
+        self.pwm_left_plot = self.plot3.plot(pen='g', name="L")
+        self.pwm_right_plot = self.plot3.plot(pen='k', name="R")
         self.plot3_label = QLabel(self, text="--")
 
 
         self.plot4 = pg.PlotWidget(title="Error-Cum_Integral-Derivative Curves")
         self.plot4.setFixedWidth(400)
         self.plot4.setFixedHeight(250)
-        self.plot4.setBackground("#1E1E1E")
+        self.plot4.setBackground("transparent")
         self.plot4.addLegend()
         self.plot4.setLabel("left", "", **styles)
         self.plot4.setLabel("bottom", "time", **styles)

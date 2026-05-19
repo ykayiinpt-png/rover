@@ -12,11 +12,11 @@ class Sidebar(QWidget):
         self.setFixedWidth(80)
         self.setStyleSheet("""
             QWidget {
-                background-color: #1e1e1e;
+                background-color: #e1e1e1;
             }
 
             QPushButton {
-                color: white;
+                color: black;
                 border: none;
                 padding: 10px;
                 font-size: 12px;

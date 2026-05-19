@@ -28,13 +28,13 @@ class DetectionWidget(QWidget):
 
         self.setStyleSheet("""
             QTableWidget {
-                background-color: #1e1e1e;
-                color: white;
+                background-color: #e1e1e1;
+                color: black;
                 gridline-color: #444;
             }
             QHeaderView::section {
-                background-color: #2c3e50;
-                color: white;
+                background-color: white;
+                color: black;
             }
         """)
 

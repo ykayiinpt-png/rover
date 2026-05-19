@@ -27,7 +27,7 @@ class IconButton(QWidget):
 
         self.label = QLabel(text)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setStyleSheet("color: white; font-size: 11px;")
+        self.label.setStyleSheet("color: black; font-size: 11px;")
 
         layout.addWidget(self.btn)
         layout.addWidget(self.label)
@@ -39,7 +39,7 @@ class IconButton(QWidget):
 
         self.setStyleSheet("""
             root {
-                background-color: #1e1e1e;
+                background-color: #e1e1e1;
                 border-radius: 10px;
             }
         """)
@@ -67,7 +67,7 @@ class IconButton(QWidget):
     def leaveEvent(self, event):
         self.setStyleSheet("""
             QWidget {
-                background-color: #1e1e1e;
+                background-color: #e1e1e1;
                 border-radius: 10px;
             }
         """)

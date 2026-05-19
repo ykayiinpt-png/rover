@@ -67,7 +67,7 @@ class KeyboardJoystickWidget(QWidget):
             QPushButton {
                 border-radius: 15px;
                 background-color: #c0392b;
-                color: white;
+                color: black;
                 font-weight: bold;
             }
             QPushButton:pressed {
@@ -101,10 +101,13 @@ class KeyboardJoystickWidget(QWidget):
         self.directionChanged.emit("stop")
         self.axisChanged.emit(0.0, 0.0)
         
-        self.commands_send_queue.put({
-            "topic": "slam/rover/commands/remote",
-            "payload": {"x": 0, "y": 0, "a": "stop"}
-        })
+        try:
+            self.commands_send_queue.put({
+                "topic": "slam/rover/commands/remote",
+                "payload":  {"type": "joystick", "data": {"x": 0, "y": 0, "a": "stop"}}
+            })
+        except Exception:
+            pass
         
         #print("STOP")
         self.update()
@@ -135,10 +138,13 @@ class KeyboardJoystickWidget(QWidget):
         if x == 0 and y == 0:
             return
         
-        self.commands_send_queue.put({
-            "topic": "slam/rover/commands/remote",
-            "payload": {"x": x, "y": y, "a": "move"}
-        })
+        try:
+            self.commands_send_queue.put({
+                "topic": "slam/rover/commands/remote",
+                "payload":  {"type": "joystick", "data": {"x": x, "y": y, "a": "move"}}
+            })
+        except Exception:
+            pass
 
         direction = f"x={x:.2f}, y={y:.2f}"
         #print(direction)
@@ -159,9 +165,12 @@ class KeyboardJoystickWidget(QWidget):
             return any(k in self.pressed_keys for k in keys)
 
         def draw_circle(x, y, label, keys):
-            color = QColor("#1abc9c") if active(keys) else QColor("#2c3e50")
+            color = QColor("white") if active(keys) else QColor("black")
             painter.setBrush(color)
-            painter.setPen(Qt.GlobalColor.white)
+            if active(keys):
+                painter.setPen(Qt.GlobalColor.black)
+            else:
+                painter.setPen(Qt.GlobalColor.white)
             painter.drawEllipse(x, y, size, size)
             painter.drawText(x, y, size, size, Qt.AlignmentFlag.AlignCenter, label)
 
