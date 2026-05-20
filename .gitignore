@@ -47,4 +47,8 @@ temp/
 *.local.txt
 *.local.*
 
-./occupancy_grid_.*.nyp
+./occupancy_grid_*.npy
+
+yolov8n_ncnn_model/**
+
+*.pt

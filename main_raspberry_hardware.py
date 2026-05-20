@@ -1,4 +1,8 @@
 import faulthandler
+
+from src.raspberry.exploration import ExplorationPlanner
+from src.raspberry.log import PiLogger
+from src.raspberry.video.process import CameraProcess
 faulthandler.enable()
 
 
@@ -77,9 +81,15 @@ def main():
     odometry_data_sent_queue = multiprocessing.Queue(maxsize=1000)
     commands_send_queue = multiprocessing.Queue(maxsize=1000)
     commands_receive_queue = multiprocessing.Queue(maxsize=1000)
+    log_sent_queue = multiprocessing.Queue(maxsize=1000)
     
     communication_process: CommunicationProcess = None
+    camera_process: CameraProcess = None
     rover_mapping_process: MappingProcess =None
+    
+    pi_logger = PiLogger("RaspberryPI", log_sent_queue)
+    rover_logger = PiLogger("Rover", log_sent_queue)
+    mapping_logger = PiLogger("Mapping", log_sent_queue)
     
     features = cfg.features
     
@@ -87,6 +97,9 @@ def main():
         communication_process = CommunicationProcess(
             host=cfg.mqtt.host, port=cfg.mqtt.port,
             rover_shared_state=rover_shared_state, rover_shared_state_command_lock=rover_shared_state_command_lock,
+            
+            log_sent_queue=log_sent_queue,
+            
             ultrasound_data_sent_queue=ultrasound_data_sent_queue,
             imu_data_send_queue=imu_data_send_queue,
             odometry_data_sent_queue=odometry_data_sent_queue,
@@ -96,27 +109,33 @@ def main():
             mapping_position_data_sent_queue=mapping_position_data_sent_queue
         )
     
+    if "video" in features:
+        camera_process = CameraProcess(
+            cam_cmd=cfg.video.command.camera,
+            ffmpeg_cmd=cfg.video.command.ffmpeg
+        )
+    
     sonar_array=UltrasoundSensorArray(
         sensors_config=[
             {
-                'name': cfg.ultra_sounds.back.name,  "key": cfg.ultra_sounds.back.key,
-                'trig': cfg.ultra_sounds.back.gpio.trig, 'echo': cfg.ultra_sounds.back.gpio.echo,
-                "angle_offset": np.pi
-            },
-            {
                 'name': cfg.ultra_sounds.front.name,  "key": cfg.ultra_sounds.front.key,
                 'trig': cfg.ultra_sounds.front.gpio.trig, 'echo': cfg.ultra_sounds.front.gpio.echo,
+                "angle_offset":  np.pi
+            },
+            {
+                'name': cfg.ultra_sounds.back.name,  "key": cfg.ultra_sounds.back.key,
+                'trig': cfg.ultra_sounds.back.gpio.trig, 'echo': cfg.ultra_sounds.back.gpio.echo,
                 "angle_offset": 0
             },
             {
                 'name': cfg.ultra_sounds.left.name,  "key": cfg.ultra_sounds.left.key,
                 'trig': cfg.ultra_sounds.left.gpio.trig, 'echo': cfg.ultra_sounds.left.gpio.echo,
-                "angle_offset": np.pi/2
+                "angle_offset": -np.pi/2
             },
             {
                 'name': cfg.ultra_sounds.right.name,  "key": cfg.ultra_sounds.right.key,
                 'trig': cfg.ultra_sounds.right.gpio.trig, 'echo': cfg.ultra_sounds.right.gpio.echo,
-                "angle_offset": -np.pi/2
+                "angle_offset": np.pi/2
             },
             #{'name': 'Front', "key": "u_f", 'trig': 20, 'echo': 21},
             #{'name': 'Right', "key": "u_r", 'trig': 26, 'echo': 7}, # NOTE: Have to disable SPI in order to add interruption to the pin 7 an SPI PIN
@@ -162,6 +181,7 @@ def main():
     # Calibrate the IMU
     imu_sensor.calibrate()
     
+    # The nabigation
     rover_navigation = Navigation(
         shared_state=navigation_shared_state,
         map_data_sent_queue=map_data_send_queue,
@@ -170,15 +190,26 @@ def main():
         dim_l=cfg.navigation.dim.l, dim_w=cfg.navigation.dim.w
     )
     
-    rover_navigation.set_waypoints(cfg.navigation.waypoints)
+    if cfg.navigation.waypoint.run:
+        rover_navigation.set_waypoints(cfg.navigation.waypoint.items)
+    
+    # The explorer Planner
+    rover_explorer = ExplorationPlanner(
+        safe_avoid_angle=cfg.exploration.angle_threshold,
+        safe_distance=cfg.exploration.dist_threshold,
+        rover_shared_state=rover_shared_state,
+        mapping_shared_state=mapping_shared_state,
+        navigation_shared_state=navigation_shared_state,
+    )
     
     # Mapping Process
     ekf = KalmanMapping(dt=None)
     occupancy_grid = OccupancyMap(
-        width_m=cfg.mapping.width,
-        height_m=cfg.mapping.width,
-        resolution=cfg.mapping.resolution,
-        save_grid_to_file=cfg.mapping.occupancy_grid.save_file
+        width_m=cfg.mapping.occupancy_grid.width,
+        height_m=cfg.mapping.occupancy_grid.width,
+        resolution_x=cfg.mapping.occupancy_grid.resolution.x,
+        resolution_y=cfg.mapping.occupancy_grid.resolution.y,
+        save_grid_to_file=cfg.mapping.occupancy_grid.save_file_on_stop
     )
     rover_mapping_process =  MappingProcess(
         ekf=ekf, occupacy_grid=occupancy_grid,
@@ -190,9 +221,11 @@ def main():
     
     rover = Rover(
         navigation=rover_navigation,
-        control_mode= Rover.MODE_WAYPOINTS_NAVIGATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
+        explorer=rover_explorer,
+        control_mode= Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
         base_rotation_velocity=cfg.rover.velocity_rotate,
+        swivel_velocity_pwm=cfg.rover.swivel_velocity_pwm,
         shared_state=rover_shared_state,
         odo= odometry,
         
@@ -238,7 +271,9 @@ def main():
         
         wheels_base_distance=cfg.rover.odometry.wheels_base_distance,
         active_pid=cfg.rover.enable_pid,
-        active_angle_pid=cfg.rover.enable_angle_pid
+        active_angle_pid=cfg.rover.enable_angle_pid,
+        
+        logger=rover_logger
     )
     
     
@@ -259,6 +294,8 @@ def main():
         rover_shared_state=rover_shared_state,
         mapping_shared_state=mapping_shared_state,
         navigation_shared_state=navigation_shared_state,
+        
+        logger=pi_logger
     )
     print(raspberry_pi_instance)
     
@@ -267,6 +304,10 @@ def main():
         if "data" in features:
             communication_process.start()
             logging.info("[Main] Communication process scheduled to start")
+            
+        if "video" in features:
+            camera_process.start()
+            logging.info("[Main] Camera process scheduled to start")
             
         if cfg.mapping.enabled:
             rover_mapping_process.start()
@@ -305,6 +346,11 @@ def main():
         
         if "data" in features:
             try:
+                # NOTE: Not to call. The function is asynchronnous
+                # and is already handled insite the process
+                # that runs an event loop
+                # communication_process.stop()
+                
                 if communication_process is not None and communication_process.is_alive():
                     communication_process.terminate()
                     communication_process.join(timeout=5)
@@ -316,11 +362,28 @@ def main():
                 logging.info("[Main] [communication_process] Clean exit.")
             except Exception as e:
                 logging.exception("[Main] communication_process Exception while running")
+        
+        if "video" in features:
+            try:
+                # Here we have to call stop
+                camera_process.stop()
+                time.sleep(5)
+                
+                if camera_process is not None and camera_process.is_alive():
+                    camera_process.terminate()
+                    camera_process.join(timeout=5)
+
+                    if camera_process.is_alive():
+                        logging.warning("[Main] [CameraProcess] Server Force killing Communcation process...")
+                        camera_process.kill()
+
+                logging.info("[Main] [CameraProcess] Clean exit.")
+            except Exception as e:
+                logging.exception("[Main] CameraProcess Exception while running")
                 
         if cfg.mapping.enabled:
             try:
                 if rover_mapping_process is not None and rover_mapping_process.is_alive():
-                    rover_mapping_process.stop()
                     rover_mapping_process.terminate()
                     rover_mapping_process.join(timeout=5)
 

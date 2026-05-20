@@ -9,10 +9,12 @@ import numpy as np
 
 from src.core.shared import MemorySharedDict
 from src.core.utils import clamp, dict_equal_fast, sign, wrap_angle
+from src.raspberry.exploration import ExplorationPlanner
 from src.raspberry.hardware.rover.motor import RMotor
 from src.raspberry.hardware.rover.odometry import WheelOdometry
 from src.raspberry.hardware.rover.pid import PIDController
 from src.raspberry.hardware.sensors.imu import IMUSensor
+from src.raspberry.log import PiLogger
 from src.raspberry.navigation import Navigation
 
 
@@ -39,7 +41,7 @@ class RoverYawEstimator:
         dtheta_odom = (d_right - d_left) / self.wheel_base
         theta_odom = self.theta + dtheta_odom
         
-        print("Theta Odom", theta_odom, "Theta Imu", theta_imu, "dthetah_odom", dtheta_odom)
+        #print("Theta Odom", theta_odom, "Theta Imu", theta_imu, "dthetah_odom", dtheta_odom)
 
         # Complementary fusion
         self.theta = self.alpha * theta_imu + (1 - self.alpha) * theta_odom
@@ -64,7 +66,7 @@ class Rover:
     """
     
     MODE_MANUAL_NAVIGATION = 0
-    MODE_AUTONOMOUS_NAVIGATION = 1
+    MODE_AUTONOMOUS_EXPLORATION = 1
     MODE_WAYPOINTS_NAVIGATION = 2
     
     COMMAND_STOP = {"x": 0, "y": 0, "a": "stop"}
@@ -86,11 +88,13 @@ class Rover:
                 pid_angle,
                 theta_target,
                 control_mode: int,
-                navigation: Navigation,
+                navigation: Navigation, explorer: ExplorationPlanner,
+                logger: PiLogger,
                 pwm_bais_left=20, pwm_bais_right=20,
                 wheels_base_distance=0.10,
                 active_pid=False,
                 active_angle_pid=False,
+                swivel_velocity_pwm=80,
                 base_velocity=50, base_rotation_velocity:int=0.1, no_pid_pwm_dutycycle_value=50):
         """
         :param theta_target: the angle to maintant aound the é-axis
@@ -111,6 +115,8 @@ class Rover:
         ######################################
         # Control mode
         self.control_mode = control_mode
+        self.control_mode_next_mode = None
+        
         
         ###################################
         # Motors
@@ -164,6 +170,7 @@ class Rover:
         self.pwm_r = 0.0
         self.pwm_bais_l = pwm_bais_left
         self.pwm_bais_r = pwm_bais_right
+        self.swivel_velocity_pwm = swivel_velocity_pwm
         
         
         ############################################""
@@ -187,6 +194,11 @@ class Rover:
         # Navigation
         #
         self.navigation = navigation
+        
+        #########################################
+        # Exploration
+        #
+        self.explorer = explorer
             
     def set_theta_target(self, theta):
         """
@@ -242,10 +254,32 @@ class Rover:
         if cmd is None:
             return
         
-        if cmd.get("a") is None:
-            return
-        
-        self.exec_command(cmd, dt)
+        payload = cmd.get("data")
+        print("payload", payload)
+        cmd_type = cmd.get("type")
+        if cmd_type == "joystick":
+            print("Joystick")
+            if payload.get("a") is None:
+                return
+            
+            self.exec_command(payload, dt)
+        elif cmd_type == "mapping":
+            pass
+        elif cmd_type == "navigation":
+            # Here we receive wayPoints to follow
+            
+            waypoints = cmd.get("data")
+            self.navigation.set_waypoints(waypoints, contains_start=True)
+            
+            # Wes top the rover
+            self.exec_command(self.COMMAND_STOP)
+            
+            # control mode tags
+            self.control_mode_change_start_time = time.perf_counter()
+            
+            # Plan to change the control mode after a few seconds
+            self.control_mode_next_mode = Rover.MODE_WAYPOINTS_NAVIGATION
+            
             
     def change_direction(self, cmd):
         """
@@ -288,9 +322,9 @@ class Rover:
             
         self._stopped = False
         
-        if cmd.get("x") == 1:
+        if cmd.get("x") == 1 and self.control_mode == Rover.MODE_MANUAL_NAVIGATION:
             self.theta_target -= self.base_rotation_velocity * dt
-        elif cmd.get("x") == -1:
+        elif cmd.get("x") == -1 and self.control_mode == Rover.MODE_MANUAL_NAVIGATION:
             self.theta_target += self.base_rotation_velocity * dt
         elif cmd.get("a") == "stop":
             self.target_v_l = 0
@@ -326,6 +360,21 @@ class Rover:
         if self.last_command is None:
             print("No Command Yet received")
             return
+        
+        ########################################
+        #
+        # Self state change
+        # We are about to change mode
+        if self.control_mode_next_mode is not None:
+            
+            now = time.perf_counter()
+            if self.control_mode_change_start_time is not None:
+                if now - self.control_mode_change_start_time > 5:
+                    self.control_mode = self.control_mode_next_mode
+                    
+                    # We erase
+                    self.control_mode_next_mode = None
+                    self.exec_command(self.COMMAND_FORWARD)
         
         # If we already stopped, we just return
         if self._stopped:
@@ -368,7 +417,7 @@ class Rover:
         
         # Read the odometry movement        
         movement = self.odo.get_movement()
-        print("\n\n\n\n\n\nLast Movement\n\n\n\n\n\n")
+        #print("\n\n\n\n\n\nLast Movement\n\n\n\n\n\n")
         
         ############################################
         # Controls
@@ -381,6 +430,8 @@ class Rover:
             theta_to_target, _distance, theta_error = self.navigation.get_target_heading(
                 movement["avg_dist"], self.command_theta
             )
+            
+            print( theta_to_target, _distance, theta_error)
             
             if self.navigation.state == Navigation.STATE_STOP:
                 # We have reached the current waypoint target
@@ -414,9 +465,81 @@ class Rover:
                     pass
                 
                 base_rpm = 0
-        elif self.control_mode == Rover.MODE_AUTONOMOUS_NAVIGATION:
-            theta_error = wrap_angle(self.theta_target - self.command_theta, deg=True)
-            pass
+        elif self.control_mode == Rover.MODE_AUTONOMOUS_EXPLORATION:
+            explorer_state = self.explorer.state
+            print("State:", explorer_state)
+            
+            # Check safety zone
+            obstacle_detected  = self.explorer.check_safe_zone()
+            
+            if explorer_state in (ExplorationPlanner.STATE_MOVE_FORWARD, ExplorationPlanner.STATE_NONE):
+                if obstacle_detected:
+                    self.exec_command(self.COMMAND_STOP)
+                    self._stopped = False
+
+                    self.explorer.state = ExplorationPlanner.STATE_OBSTACLE_DETECTED
+                    self.explorer.detect_obstacle_top_time = now
+
+                    return
+                # Normal Forward motion
+                # Restablish the base veolocity
+                base_rpm = self.base_velocity
+                theta_error = wrap_angle(self.theta_target - self.command_theta, deg=True)
+                
+                self.exec_command(Rover.COMMAND_FORWARD)
+            elif explorer_state == ExplorationPlanner.STATE_OBSTACLE_DETECTED:
+                # We stop for a while
+                self.exec_command(self.COMMAND_STOP)
+                self._stopped = False
+                
+                theta_target = self.explorer.compute_safe_direction()
+                if theta_target is None:
+                    # We are trapped
+                    self.exec_command(self.COMMAND_STOP)
+                    print("[EXPLORER] Rover Trapped !!!!")
+                    return
+
+                self.explorer.theta_target = theta_target
+                self.explorer.state = ExplorationPlanner.STATE_WAIT_AFTER_STOP
+                
+                return
+            elif explorer_state == ExplorationPlanner.STATE_WAIT_AFTER_STOP:
+                self.exec_command(self.COMMAND_STOP)
+                self._stopped = False
+                
+                print ("Eleapsed time: ", now - self.explorer.detect_obstacle_top_time)
+                if now - self.explorer.detect_obstacle_top_time > 3:
+                    # We release the stop and go to the avoiding
+                    self.explorer.state = ExplorationPlanner.STATE_OBSTACLE_AVOIDING
+                
+                return
+            elif explorer_state == ExplorationPlanner.STATE_OBSTACLE_AVOIDING:
+                theta_target, theta_error, is_clear = self.explorer.handle_obstacle(self.command_theta)
+                print(theta_target, theta_error, is_clear)
+                if is_clear:
+                    self.exec_command(self.COMMAND_STOP)
+                    time.sleep(0.001)
+                    self._stopped = False
+                    
+                    self.theta_target = theta_target
+                    self.explorer.state = ExplorationPlanner.STATE_MOVE_FORWARD
+                    return
+                else:
+                    if theta_error < 0:
+                        self.exec_command(Rover.COMMAND_TURN_LEFT)
+                    elif theta_error > 0:
+                        self.exec_command(Rover.COMMAND_TURN_RIGHT)
+                    
+                    # Set base RPM to zero in order to rotate on place
+                    base_rpm = 0
+            
+            elif self.explorer.state == ExplorationPlanner.STATE_STOP:
+                self.exec_command(self.COMMAND_STOP)
+                self._stopped = False
+                
+                return
+            else:
+                pass
         elif self.control_mode == Rover.MODE_MANUAL_NAVIGATION:
             theta_error = wrap_angle(self.theta_target - self.command_theta, deg=True)
             pass
@@ -426,15 +549,20 @@ class Rover:
         #################################
         # PID angle
         #
+        """
+        Straight line PID correction
+        """
         omega = 0
-        if self.active_angle_pid:
-            if self.pid_angle_last_time is None:
-                self.pid_angle_last_time = now
-            else:
-                if self.last_command["x"] in [-1, 1]:
-                    rotation_rpm = 80 if theta_error > 0 else -80
-                    base_rpm = 0
-                    print("Fixing angle")
+        
+        if self.last_command["x"] in [-1, 1]:
+            # We have to rotate somehow to heading to acertain angle
+            rotation_rpm = self.swivel_velocity_pwm if theta_error > 0 else -self.swivel_velocity_pwm
+            base_rpm = 0
+            #print("Fixing angle")
+        else:
+            if self.active_angle_pid:
+                if self.pid_angle_last_time is None:
+                    self.pid_angle_last_time = now
                 else:
                     # We only apply the angle PID on certain angle error
                     if abs(theta_error) < 20:
@@ -442,10 +570,10 @@ class Rover:
                         # so that the velocity can stabilize
                         if now - self.pid_angle_last_time >= 1:
                             omega = self.pid_angle.compute(self.theta_target, self.command_theta, theta_error)
-                            print("Error theta: ", theta_error)
-                            print("Angle Omega: ", omega)
+                            #print("Error theta: ", theta_error)
+                            #print("Angle Omega: ", omega)
                             omega = clamp(omega, -int(self.base_velocity * 0.7), int(self.base_velocity * 0.7))
-                            print("Angle Omega Clamped: ", omega)
+                            #print("Angle Omega Clamped: ", omega)
                     else:
                         pass
         
@@ -525,6 +653,12 @@ class Rover:
         
         if self.odo:
             self.odo.stop()
+            
+        if self.explorer:
+            self.explorer.stop()
+            
+        if self.navigation:
+            self.navigation.stop()
         
         logging.info("[Rover] Rover stopped")
         

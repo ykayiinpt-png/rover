@@ -9,6 +9,7 @@ from src.raspberry.hardware.rover import Rover, RoverThread
 from src.raspberry.hardware.sensors.imu import IMUSensor
 from src.raspberry.hardware.sensors.ultrasound import UltrasoundSensorArray
 from src.raspberry.hardware.thread import IMUThread, UltrasoundThread
+from src.raspberry.log import PiLogger
 
 class RaspberryPi:
     """
@@ -28,7 +29,9 @@ class RaspberryPi:
                 
                 rover_shared_state: MemorySharedDict, 
                 mapping_shared_state: MemorySharedDict,
-                navigation_shared_state: MemorySharedDict):
+                navigation_shared_state: MemorySharedDict,
+                
+                logger: PiLogger):
         
         #state
         self.rover_shared_state = rover_shared_state
@@ -42,6 +45,8 @@ class RaspberryPi:
         # We assume that we have a square of 8m x 8m to map
         # TODO: later we will handle the over sizing
         self.square_size = 8.0
+        
+        self.logger = logger
         
         # Threads
         self.ultra_sound_thread = UltrasoundThread(
@@ -71,12 +76,16 @@ class RaspberryPi:
         
         # Lancement des threads
         logging.info("[RaspberryPI] Démarrage de la boucle principale...")
+        self.logger.info("[RaspberryPI] Démarrage de la boucle principale...")
         self.ultra_sound_thread.start()
         logging.info("[RaspberryPI] Robot Controller: Ultrasound thread started")
+        self.logger.info("[RaspberryPI] Robot Controller: Ultrasound thread started")
         self.imu_thread.start()
         logging.info("[RaspberryPI] Robot Controller: Imu thread has started")
+        self.logger.info("[RaspberryPI] Robot Controller: Imu thread has started")
         self.rover_thread.start()
         logging.info("[RaspberryPI] Robot Controller: Rover Thread thread started")
+        self.logger.info("[RaspberryPI] Robot Controller: Rover Thread thread started")
         
         #self.rover_thread.rover.move(0.5, 0)
 

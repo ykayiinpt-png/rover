@@ -52,11 +52,12 @@ class Navigation:
         self.distance_multiplier = distance_multiplier
         
         # We start with a stop state
-        self.state = Navigation.STATE_STOP
+        self.state = Navigation.STATE_MOVE_FORWARD
         self.theta_to_target = 0.0
         self.distance_to_target = None
         # How much distznce we have traveled since the last waypoint 
         self.distance_from_last_target = 0
+        self.started = False
         
         self.last_batch_time = time.perf_counter()
         self.cumul_distance = 0.0
@@ -66,7 +67,7 @@ class Navigation:
         
         self.map_data_sent_queue = map_data_sent_queue
         
-    def set_waypoints(self, waypoints: list):
+    def set_waypoints(self, waypoints: list, contains_start=False):
         """
         Set the navigation route for the rover.
 
@@ -77,22 +78,34 @@ class Navigation:
         the rover's path.
         :param dist_threshold (float): the maximum distance error allowed around the target point
         """
-        self.waypoints = [[0, 0]]
+        
+        if not contains_start:
+            self.waypoints = [[0, 0]]
+            
+            self.x = 0
+            self.y = 0
+        else:
+            self.waypoints = []
+            
         # TODO: Pay attention
         self.waypoints.extend([[self.dim_l * x, self.dim_w * y] for x,y in waypoints])
         #print(self.waypoints)
+            
+        self.x, self.y = self.waypoints[0][0], self.waypoints[0][1] 
         
         
-        self.x = 0
-        self.y = 0
+        
         
         # Set the theta to target back to 0.0
         self.theta_to_target = 0.0
         self.theta_next_list = []
         self.distance_from_last_target = 0
         self.current_wp_idx = 1
+        self.started = True
         
         self.buffer.clear()
+        
+        print("Set started:")
         
     def handle_batch(self):
         self.buffer.append((self.x, self.y, self.cumul_distance))
@@ -134,6 +147,11 @@ class Navigation:
             - distance: the remaining distance
             - theta_error: heading angle error from the crr
         """
+        if not self.started:
+            return None, None, None
+        
+        
+        
         now = time.perf_counter()
         
         if self.current_wp_idx >= len(self.waypoints):
@@ -144,7 +162,7 @@ class Navigation:
             return None, 0, 0
         
         d_moy = self.shared_state["odometry"]["avg_dist"]
-        #print("[Navigation]: d_moy from Shared object:", d_moy)
+        print("[Navigation]: d_moy from Shared object:", d_moy)
         
         current_angle_rad = np.deg2rad(current_angle)
         
@@ -181,7 +199,7 @@ class Navigation:
             self.theta_to_target = next_angle
             self.theta_to_target = wrap_angle(self.theta_to_target, deg=True)
             
-            self.theta_next_list.append({"na": next_angle, "th": self.theta_to_target})
+            #self.theta_next_list.append({"na": next_angle, "th": self.theta_to_target})
             # TODO: multiply the distance by two, real experience eveal that
             # travel distance is the command distance divided by two
             #print(f"Distance to next target: {self.distance_to_target}")
@@ -190,12 +208,12 @@ class Navigation:
         # But we have inversed the axis Of ou our base
         # Pay attention using the real word income
         theta_error = wrap_angle(self.theta_to_target - current_angle, deg=True)
-        #print("Theta Error Navigation: ", theta_error)
-        #print("d_moy:", d_moy)
-        #print("Theta to target: ", self.theta_to_target)
-        #print(f"Current angle: {current_angle}")
+        print("Theta Error Navigation: ", theta_error)
+        print("d_moy:", d_moy)
+        print("Theta to target: ", self.theta_to_target)
+        print(f"Current angle: {current_angle}")
         #print("Distance to Target: ", distance)
-        #print(f"Distance from last target: {self.distance_from_last_target}")
+        print(f"Distance from last target: {self.distance_from_last_target}")
         #print(f"State: {self.state}")
         
         
@@ -217,7 +235,7 @@ class Navigation:
         elif self.state == Navigation.STATE_MOVE_FORWARD:
             self.distance_from_last_target += d_moy
             
-            if abs(self.distance_to_target - self.distance_from_last_target) < self.dist_threshold:
+            if abs(self.distance_to_target - self.distance_from_last_target * self.distance_multiplier) < self.dist_threshold:
                 self.current_wp_idx += 1
                 ##print(f"Waypoint {self.current_wp_idx} reached !")
                 
@@ -230,3 +248,6 @@ class Navigation:
             self.last_batch_time = now
             
         return self.theta_to_target, distance, theta_error
+    
+    def stop(self):
+        pass
