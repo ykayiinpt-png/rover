@@ -13,3 +13,22 @@ video:
     enabled: true
     stream:
         url: "udp://192.168.137.1:5004"
+
+###############################
+# Video
+###############################
+ai:
+    pipelines:
+        object_detection:
+            enabled: true
+            draw_boxes: true
+            model:
+                name: "yolov8n.pt"
+            frame:
+                rate: 10
+            classes:
+                [
+                    "boite", "obstacle", "box"
+                ]
+            confidence:
+                threshold: 0.1

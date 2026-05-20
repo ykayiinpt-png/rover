@@ -1,12 +1,16 @@
 import logging
 import sys
 import time
+
+import cv2
 import av
 import numpy as np
 
 from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget, QPushButton
 from PyQt6.QtCore import QObject, QSize, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
+from src.ai.pipeline import ObjectDetectionPipeline
+from src.raspberry.config import Config
 
 class FfmpegSignals(QObject):
     frame_ready = pyqtSignal(np.ndarray)
@@ -20,9 +24,24 @@ class FfmpegStreamController(QThread):
         
         self.signals = FfmpegSignals()
         
+        self.cfg = Config()
+        
+        # Pipelines
+        self.pipeline_object_detection = ObjectDetectionPipeline(
+            classes=self.cfg.ai.pipelines.object_detection.classes,
+            conf_threshold=self.cfg.ai.pipelines.object_detection.confidence.threshold,
+            draw_boxes=self.cfg.ai.pipelines.object_detection.draw_boxes,
+            frame_rate=self.cfg.ai.pipelines.object_detection.frame.rate,
+            model_name=self.cfg.ai.pipelines.object_detection.model.name,
+        )
+        
         
     def run(self):
         try:
+            prev_time = time.time()
+            fps = 0.0
+            frame_count = 0
+        
             self.container = av.open(
                 self.stream_url,
                 format="mpegts",
@@ -52,12 +71,43 @@ class FfmpegStreamController(QThread):
 
                         if not self.running:
                             break
+                        
+                        frame_count += 1
+                        current_time = time.time()
+
+                        if current_time - prev_time >= 1.0:
+                            fps = frame_count / (current_time - prev_time)
+                            prev_time = current_time
+                            frame_count = 0
+                        
+                        
 
                         # Convert to RGB (Qt-friendly)
-                        img = frame.to_ndarray(format="rgb24")
+                        frame = frame.to_ndarray(format="rgb24")
+                        
+                        if self.cfg.ai.pipelines.object_detection.enabled:
+                            frame, objects = self.pipeline_object_detection.process(frame)
+                            print("Objects Yolo: ", objects)
+                        
+                        #################""
+                        # Write FPS
+                        text = f"FPS: {fps:.1f}"
+
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 0.3
+                        thickness = 1
+
+                        (text_w, text_h), _ = cv2.getTextSize(text, font, font_scale, thickness)
+
+                        x = frame.shape[1] - text_w - 10   # top-right padding
+                        y = 30
+
+                        cv2.putText(frame, text, (x, y), font, font_scale,
+                             (0, 255, 0), thickness, cv2.LINE_AA
+                         )
 
                         # Emit latest frame only
-                        self.signals.frame_ready.emit(img)
+                        self.signals.frame_ready.emit(frame)
 
                 except Exception:
                     logging.exception("Exception")
