@@ -41,14 +41,14 @@ class ZRotationWidget(pg.GraphicsLayoutWidget):
         # Main origin
         self.plot.plot([0, 0], [0, 1], pen=pg.mkPen('gray', width=3))
 
-        self.label = pg.TextItem("", anchor=(0.5, 0))
+        self.label = pg.TextItem("Target: -- Command: --", anchor=(0.5, 0), color="black")
         self.plot.addItem(self.label)
         self.label.setPos(0, -0.2)
 
-    def update_gauge(self, angle1, angle2):
+    def update_gauge(self, angle1_deg, angle2_deg):
         # angles entre 0 et pi
-        angle1 = np.deg2rad(angle1)
-        angle2 = np.deg2rad(angle2)
+        angle1 = np.deg2rad(angle1_deg)
+        angle2 = np.deg2rad(angle2_deg)
         
         angle1 += np.pi/2
         angle2 += np.pi/2
@@ -58,9 +58,8 @@ class ZRotationWidget(pg.GraphicsLayoutWidget):
 
         self.needle1.setData([0, x1], [0, y1])
         self.needle2.setData([0, x2], [0, y2])
-
-        direction = "Clockwise" if angle2 > angle1 else "CounterClockwise"
-        self.label.setText(direction)
+        
+        self.label.setText(f"T: {angle1_deg:05.2f}° [] C: {angle2_deg:05.2f}°")
 
 
 class SensorsChartSignals(QObject):
