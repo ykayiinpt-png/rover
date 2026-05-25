@@ -4,7 +4,9 @@ import multiprocessing
 import os
 import sys
 
+from src.core.shared import MemorySharedDict
 from src.raspberry.config import Config
+from src.ui.heartbeat import Pi4HeartBeatAckProcess
 
 if sys.platform.lower() == "win32" or os.name.lower() == "nt":
         print("Setting event policy...")
@@ -47,6 +49,7 @@ def main():
     video_stream_process = None
     raspberry_data_process = None
     commands_process = None
+    heatbeat_process = None
     
     log_received_queue=None
     
@@ -68,6 +71,16 @@ def main():
         
         log_received_queue = multiprocessing.Queue(maxsize=1000)
         
+        # Independant process
+        processing_manager = multiprocessing.Manager()
+        ui_state = MemorySharedDict(manager=processing_manager)
+        
+        # Init
+        ui_state["alive"] = False
+        
+        # Processes
+        heatbeat_process = Pi4HeartBeatAckProcess(ui_state=ui_state, host=cfg.mqtt.host, port=cfg.mqtt.port)
+        
         
         app = QApplication(sys.argv)
         app.styleHints().setColorScheme(Qt.ColorScheme.Light)
@@ -75,6 +88,8 @@ def main():
         
 
         window = MainWindow(
+            ui_state=ui_state,
+            
             # Video streaming queue
             video_frame_compute_result_queue=video_frame_compute_result_queue,
             
@@ -134,6 +149,8 @@ def main():
             
         if "commands" in cfg.features:
             commands_process.start()
+            
+        heatbeat_process.start()
         
         window.show()
 
@@ -220,6 +237,20 @@ def main():
                         commands_process.kill()   
             except Exception as e:
                 logging.exception("Exception occured while stopping")
+                
+        try:
+            if heatbeat_process is not None and heatbeat_process.is_alive():
+                heatbeat_process.terminate()
+                logging.info('[AppUI] teminate heartbeat computing process')
+                heatbeat_process.join(timeout=50)
+                logging.info('[AppUI] joined heartbeat computing process')
+
+
+                if heatbeat_process.is_alive():
+                    logging.warning('[AppUI] killing heartbeat process')
+                    heatbeat_process.kill()   
+        except Exception as e:
+            logging.exception("Exception occured while stopping heartbeat")
     
 
 if __name__ == "__main__":

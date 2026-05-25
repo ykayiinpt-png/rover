@@ -1,10 +1,11 @@
 import logging
 import multiprocessing
 
-from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtCore import QSize, QTimer, Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QToolBar, QVBoxLayout, QWidget
 
+from src.core.shared import MemorySharedDict
 from src.ui.detection import DetectionWidget
 from src.ui.graphics.map.navigation import MapNavigationControlWidget
 from src.ui.graphics.controls.joystick import KeyboardJoystickDialog
@@ -17,9 +18,28 @@ from src.ui.sidebar import Sidebar
 from src.ui.video.ffmpeg import FfmpegVideaoStreamWidget
 from src.ui.video.widgets import RtcTrackWidget
 
+class StatusIndicator(QLabel):
+    """
+    Status from heartbeat
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(20, 20)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.set_status(False)
+
+    def set_status(self, state: bool):
+        color = "green" if state else "red"
+        self.setStyleSheet(f"""
+            background-color: {color};
+            border-radius: 10px;
+            border: 1px solid black;
+        """)
 
 class MainWindow(QMainWindow):
     def __init__(self,
+                ui_state: MemorySharedDict,
                 video_frame_compute_result_queue: multiprocessing.Queue,
                 sensors_ultrasound_data_queue: multiprocessing.Queue,
                 sensors_imu_data_queue: multiprocessing.Queue,
@@ -38,6 +58,8 @@ class MainWindow(QMainWindow):
         #self.bac
         
         # Objects
+        self.ui_state = ui_state
+        
         self.keyboard_joystick_dialog = KeyboardJoystickDialog(
             commands_send_queue=command_sent_data_queue,
             command_receive_queue=command_receive_data_queue
@@ -54,6 +76,29 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.container)
         
         layout = QHBoxLayout()
+        
+        # ----- Status Bar -----
+        self.status = self.statusBar()
+        # Container widget for status bar
+        s_container = QWidget()
+        s_layout = QHBoxLayout()
+        s_layout.setContentsMargins(5, 0, 5, 0)
+
+        self.heartbeat_indicator = StatusIndicator()
+        self.heartbeat_text_label = QLabel("Disconnected")
+
+        s_layout.addWidget(self.heartbeat_indicator)
+        s_layout.addWidget(self.heartbeat_text_label)
+
+        s_container.setLayout(s_layout)
+
+        self.status.addPermanentWidget(s_container)
+        
+         # Timer every 100 ms
+        self.heartbeat_timer = QTimer()
+        self.heartbeat_timer.timeout.connect(self.slot_update_status)
+        self.heartbeat_timer.start(1)
+        # END
         
         # Components
         self.sensors_chart = SensorCharts(data_queue=sensors_ultrasound_data_queue)
@@ -206,6 +251,14 @@ class MainWindow(QMainWindow):
         self.logs_widget.stop()
         
         event.accept()
+        
+    def slot_update_status(self):
+        if self.ui_state["alive"]:
+            self.heartbeat_indicator.set_status(True)
+            self.heartbeat_text_label.setText("Connected")
+        else:
+            self.heartbeat_indicator.set_status(False)
+            self.heartbeat_text_label.setText("Disconnected")
         
     def slot_menu_acq_sensors_parameter(self):
         self.dialog = AccquisitionMenuSensorsParameters()
