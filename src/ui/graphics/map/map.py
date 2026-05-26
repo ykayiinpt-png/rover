@@ -20,19 +20,19 @@ from src.core.search import astar
 class MapSignals(QObject):
     position = pyqtSignal(tuple)
     mapping_position = pyqtSignal(tuple)
-    
+
 class MapStateController(QThread):
     def __init__(self,
-                 map_data_queue: multiprocessing.Queue, 
+                 map_data_queue: multiprocessing.Queue,
                  mapping_position_data_queue: multiprocessing.Queue,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         self.signals = MapSignals()
         self.stop_event = threading.Event()
         self.map_data_queue = map_data_queue
         self.mapping_position_data_queue = mapping_position_data_queue
-        
+
     def run(self):
         while not self.stop_event.is_set():
             # Handle Imu data
@@ -40,15 +40,15 @@ class MapStateController(QThread):
                 data = self.map_data_queue.get()
                 #print("Map data", data)
                 self.signals.position.emit((data["x"], data["y"], data["dist"]))
-                
+
             if not self.mapping_position_data_queue.empty():
                 data = self.mapping_position_data_queue.get()
                 #print("Mapping Data data", data)
                 self.signals.mapping_position.emit((data["x"], data["y"], data["theta"]))
-            
+
             time.sleep(0.01)
         logging.info("[MapStateController] Thread ended")
-        
+
     def stop(self):
         logging.info("[MapStateController] QThread stop fired")
         self.stop_event.set()
@@ -57,26 +57,26 @@ class MapWidgetQtPaint(QWidget):
     """
     @deprecated
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  map_data_queue: multiprocessing.Queue,
                  mapping_position_data_queue: multiprocessing.Queue,
                  path_max_size=500, *args, **kwargs):
         """
         :param path_max_size:
         """
-        
+
         super().__init__(*args, **kwargs)
         self.setFixedSize(440, 240)
         self.setMouseTracking(True)
-        
+
         # Objects
         self.controller = MapStateController(
             map_data_queue=map_data_queue,
             mapping_position_data_queue=mapping_position_data_queue
         )
         self.draw_lock = threading.Lock()
-        
+
         # Map size
         self.map_w = 440
         self.map_h = 240
@@ -101,7 +101,7 @@ class MapWidgetQtPaint(QWidget):
         self.path_polygon = QPolygonF()
         self.robot_pos = QPointF(0, 0)
         self.distance_text = "0.00 m"
-        
+
         self.path_ekf: Deque[QPointF] = collections.deque(maxlen=path_max_size)
         self.path_ekf_polygon = QPolygonF()
         self.robot_ekf_pos = QPointF(0, 0)
@@ -110,11 +110,11 @@ class MapWidgetQtPaint(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_simulation)
         #self.timer.start(100)
-        
+
         self.controller.signals.position.connect(self.slot_update_position)
         self.controller.signals.mapping_position.connect(self.slot_update_mapping_position)
         self.controller.start()
-        
+
     def ipoint(p: QPointF):
         return int(p.x()), int(p.y())
 
@@ -129,43 +129,43 @@ class MapWidgetQtPaint(QWidget):
         self.path.append(QPointF(self.robot_pos))
 
         self.update()
-        
+
     def slot_update_position(self, position_data):
         x, y, dist = position_data
         with self.draw_lock:
             #print("Update position")
             for k in range(len(x)):
                 self.robot_pos = QPointF(x[k] * 10, y[k]*10)
-                
+
                 self.path_polygon.append(
                     self.world_to_screen(self.robot_pos)
                 )
-                
+
                 self.path.append(self.robot_pos)
                 self.distance_text = f"{dist[k]:05.2f}"
-            
+
             self.update()
-            
+
     def slot_update_mapping_position(self, position_data):
         x, y, _ = position_data
         with self.draw_lock:
             #print("Update position")
             for k in range(len(x)):
                 self.robot_ekf_pos = QPointF(x[k]*10, y[k]*10)
-                
+
                 self.path_ekf_polygon.append(
                     self.world_to_screen(self.robot_ekf_pos)
                 )
-                
+
                 self.path_ekf.append(self.robot_ekf_pos)
             self.update()
-            
+
     def clear_robot_path(self):
         """
         Remove all previous robot position appended to the path
         drawn on the screen
         """
-        
+
         with self.draw_lock:
             self.path.clear()
             self.path_ekf.clear()
@@ -174,16 +174,16 @@ class MapWidgetQtPaint(QWidget):
             self.robot_pos = QPointF(0, 0)
             self.robot_ekf_pos = QPointF(0, 0)
             self.update()
-    
+
     def stop(self):
         self.timer.stop()
-        
+
         try:
             self.draw_lock.release()
             self.draw_lock.release_lock()
         except Exception as e:
             pass
-        
+
         self.controller.stop()
         try:
             self.controller.signals.position.disconnect(self.slot_update_position)
@@ -191,7 +191,7 @@ class MapWidgetQtPaint(QWidget):
             self.controller.signals.disconnect()
         except Exception as e:
             pass
-        
+
         self.controller.requestInterruption()
         self.controller.quit()
         self.controller.wait()
@@ -284,13 +284,13 @@ class MapWidgetQtPaint(QWidget):
         sx = self.width() / self.map.shape[1]
         sy = self.height() / self.map.shape[0]
         return int(x * sx), int(y * sy)
-    
+
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.fillRect(self.rect(), QColor("black"))
-        
+
         # ================= TEXT =================
         painter.setPen(QPen(QColor("blue")))
         painter.drawText(
@@ -298,7 +298,7 @@ class MapWidgetQtPaint(QWidget):
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
             self.distance_text
         )
-        
+
         painter.setPen(QPen(QColor("black")))
         painter.drawText(
             0, 0,
@@ -324,7 +324,7 @@ class MapWidgetQtPaint(QWidget):
 
             # TODO: Be reviewed later
             self.zoom = 1
-            
+
             scaled = image.scaled(
                 int(w * self.zoom),
                 int(h * self.zoom),
@@ -361,10 +361,10 @@ class MapWidgetQtPaint(QWidget):
             #for i in range(len(self.path) - 1):
             #    p1 = self.world_to_screen(self.path[i])
             #    p2 = self.world_to_screen(self.path[i + 1])
-            #    painter.drawLine(p1, p2)  
+            #    painter.drawLine(p1, p2)
             painter.drawPolyline(self.path_polygon)
-            
-            painter.setPen(QPen(Qt.GlobalColor.blue, 2))    
+
+            painter.setPen(QPen(Qt.GlobalColor.blue, 2))
             painter.drawPolyline(self.path_ekf_polygon)
             #for i in range(len(self.path_ekf) - 1):
             #    p1 = self.world_to_screen(self.path_ekf[i])
@@ -378,8 +378,8 @@ class MapWidgetQtPaint(QWidget):
             painter.setBrush(QBrush(QColor(0, 0, 0)))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(int(r.x()) - 6, int(r.y()) - 6, 12, 12)
-            
-            
+
+
             r = self.world_to_screen(self.robot_ekf_pos)
 
             painter.setBrush(QBrush(QColor(0, 0, 255)))
@@ -510,7 +510,7 @@ class MapWidget(QWidget):
 
         self.robot_scatter.setData([], [])
         self.ekf_robot_scatter.setData([], [])
-    
+
         self._refresh_paths()
 
     # =========================================================
@@ -521,18 +521,18 @@ class MapWidget(QWidget):
         self.controller.requestInterruption()
         self.controller.quit()
         self.controller.wait()
-        
+
 class MapControlWidget(QWidget):
     """
     Map Widget with simple interactions controls
     """
-    
-    
-    def __init__(self, map_data_queue: multiprocessing.Queue, 
+
+
+    def __init__(self, map_data_queue: multiprocessing.Queue,
                  mapping_state_receive_data_queue: multiprocessing.Queue,
                  path_max_size: int,  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Map
         self.map_widget = MapWidget(
             map_data_queue=map_data_queue,
@@ -541,43 +541,43 @@ class MapControlWidget(QWidget):
         )
         layout_map = QVBoxLayout()
         layout_btns = QHBoxLayout()
-        
+
         layout_map.addSpacing(10)
         layout_btns.addWidget(QLabel(text="Map"))
-        
+
         reset_map_btn = QPushButton(text="Reset Robot Path")
         reset_map_btn.clicked.connect(self.slot_reset_map)
         layout_btns.addWidget(reset_map_btn)
-        
+
         layout_map.addLayout(layout_btns)
         layout_map.addSpacing(3)
         layout_map.addWidget(self.map_widget)
-        
+
         self.setLayout(layout_map)
-        
+
     def slot_reset_map(self):
         self.map_widget.clear_robot_path()
-        
+
     def stop(self):
         self.map_widget.stop()
-        
+
 ################################
 # Map Grid view
 #
 
 class MapGridSignals(QObject):
     grid = pyqtSignal(tuple)
-    
+
 class MapGridStateController(QThread):
     def __init__(self,
                  grid_data_queue: multiprocessing.Queue,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         self.signals = MapGridSignals()
         self.stop_event = threading.Event()
         self.grid_data_queue = grid_data_queue
-        
+
     def run(self):
         while not self.stop_event.is_set():
             # Handle Imu data
@@ -586,7 +586,7 @@ class MapGridStateController(QThread):
                 self.signals.grid.emit((data["dim"], data["cells"], data["robot"]))
             time.sleep(0.1)
         logging.info("[MapStateController] Thread ended")
-    
+
     def stop(self):
         self.stop_event.set()
 
@@ -648,9 +648,9 @@ class MapGridWidget(QWidget):
         dim, data, rb = grid_data
         src_h, src_w = dim
 
-        scale_y = self.rows / src_h
-        scale_x = self.cols / src_w
-        
+        scale_y = 1 #self.rows / src_h
+        scale_x = 1 #self.cols / src_w
+
         max_val = 5
 
         with self.draw_lock:
@@ -659,25 +659,25 @@ class MapGridWidget(QWidget):
                 i = int(y * scale_y)
                 j = int(x * scale_x)
 
-                if 0 <= i < self.rows and 0 <= j < self.cols:
+                if 0 <= y < self.rows and 0 <= x < self.cols:
                     #p = 1 - 1 / (1 + np.exp(p))
                     #self.grid[y][x] = p # min(255, self.grid[i][j] + int(p * 255))
                     #print(x, y, p, 1 - (p + max_val) / (2 * max_val))
                     # Normalize the value
                     self.grid[y][x] = 1 - (p + max_val) / (2 * max_val)
-                    
+
                     #print(self.grid[i][j], int(255 * (1-self.grid[i][j])))
                 #print("\n\n")
-                    
+
             self.robot = [rb[0], rb[1]]
 
         self.update()
-        
+
     def show_path_to(self, goal, threshold):
         """
         Computes a path from the robot position to goal and updates the grid.
         goal: (i,j)
-        
+
         :retuns path list(tuple): the path from the current robot position to
         the destination point
         """
@@ -704,9 +704,9 @@ class MapGridWidget(QWidget):
                     self.grid[i][j] = 3
 
         self.update()
-        
+
         return path
-    
+
     def reset(self):
         with self.draw_lock:
             self.grid = [[0.6 for _ in range(self.cols)] for _ in range(self.rows)]
@@ -717,7 +717,7 @@ class MapGridWidget(QWidget):
         painter = QPainter(self)
 
         painter.drawImage(0, 0, self.grid_image)
-        
+
         # TODO: Optimize this double for loop
 
         for i in range(self.rows):
@@ -736,11 +736,11 @@ class MapGridWidget(QWidget):
                 else:  # probability overlay threshold
                     gray = int(np.clip(v, 0.0, 1.0) * 255)
                     painter.fillRect(
-                        x, y, 
+                        x, y,
                         self.cell_w, self.cell_h,
                         QColor(gray, gray, gray+50, 255)
                     )
-                    
+
 
         # robot
         ri, rj = self.robot
@@ -751,10 +751,10 @@ class MapGridWidget(QWidget):
             self.cell_h,
             QColor(255, 0, 0)
         )
-        
+
     def stop(self):
         self.controller.stop()
         self.controller.requestInterruption()
         self.controller.quit()
         self.controller.wait()
-    
+
