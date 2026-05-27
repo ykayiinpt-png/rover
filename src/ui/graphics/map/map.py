@@ -11,7 +11,7 @@ import numpy as np
 import pyqtgraph as pg
 import matplotlib.cm as cm
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget, QApplication
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, pyqtSignal
+from PyQt6.QtCore import QObject, QPoint, QRect, QThread, Qt, QTimer, QPointF, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPalette, QPen, QBrush, QImage, QPolygonF
 
 from src.core.search import astar
@@ -583,12 +583,15 @@ class MapGridStateController(QThread):
             # Handle Imu data
             if not self.grid_data_queue.empty():
                 data = self.grid_data_queue.get()
-                self.signals.grid.emit((data["dim"], data["cells"], data["robot"]))
+                self.signals.grid.emit((data["dim"], data["cells"], data["robot"], data["mode"]))
             time.sleep(0.1)
         logging.info("[MapStateController] Thread ended")
 
     def stop(self):
         self.stop_event.set()
+
+class MapGridSelfSignals(QObject):
+    grid_cell_clicked = pyqtSignal(int, int)
 
 class MapGridWidget(QWidget):
     def __init__(self, grid_data_queue: multiprocessing.Queue, *args, **kwargs):
@@ -609,10 +612,9 @@ class MapGridWidget(QWidget):
         self.cell_h = self.height() // self.rows
 
         # ================= STATIC GRID =================
-        self.grid_image = QImage(self.width(), self.height(), QImage.Format.Format_RGB32)
-        self.grid_image.fill(QColor(245, 245, 245))
+        self.map_image = QImage(self.width(), self.height(), QImage.Format.Format_RGB32)
+        self.map_image.fill(Qt.GlobalColor.darkGray)
         self.build_static_grid()
-        self.cmap = cm.get_cmap("gray")
 
         # ================= DYNAMIC GRID BUFFER =================
         # 0 = empty
@@ -622,8 +624,27 @@ class MapGridWidget(QWidget):
         # 4 = probability overlay (optional)
         self.grid = [[0.6 for _ in range(self.cols)] for _ in range(self.rows)]
 
+        self.signals = MapGridSelfSignals()
+
         # ================= ROBOT =================
-        self.robot = (0, 0)
+        self.show_robot = True
+        self.robot = QPointF(0, 0)
+
+        self.show_robot_path = True
+        self.path_prev_robot = None
+        self.robot_path_image = QImage(self.width(), self.height(), QImage.Format.Format_RGBA32FPx4)
+        self.robot_path_image.fill(Qt.GlobalColor.transparent)
+
+        # Planned Path
+        self.show_planned_robot_path = True
+        self.robot_planned_path_image = QImage(self.width(), self.height(), QImage.Format.Format_RGBA32FPx4)
+        self.robot_planned_path_image.fill(Qt.GlobalColor.transparent)
+
+        # While following a path
+        self.show_navigation_robot_path = True
+        self.navigation_path_prev_robot = None
+        self.navigation_robot_path_image = QImage(self.width(), self.height(), QImage.Format.Format_RGBA32FPx4)
+        self.navigation_robot_path_image.fill(Qt.GlobalColor.transparent)
 
         # ================= SIGNAL =================
         self.controller.signals.grid.connect(self.slot_update_grid)
@@ -633,8 +654,8 @@ class MapGridWidget(QWidget):
     # STATIC GRID
     # =========================================================
     def build_static_grid(self):
-        painter = QPainter(self.grid_image)
-        painter.setPen(QPen(QColor(0, 0, 0), 1))
+        painter = QPainter(self.map_image)
+        painter.setPen(QPen(QColor(254, 254, 254), 1))
 
         for i in range(self.rows):
             y = i * self.cell_h
@@ -644,32 +665,157 @@ class MapGridWidget(QWidget):
 
         painter.end()
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            x = event.pos().x() // self.cell_w
+            y = event.pos().y() // self.cell_h
+
+            # Bounds check
+            if 0 <= x < self.cols and 0 <= y < self.rows:
+                print("Grid cell:", x, y, self.grid[y][x])
+                self.signals.grid_cell_clicked.emit(x, y)
+
+    def draw_cell(self, x, y, value):
+        """
+        x, y = grid coordinates
+        value = cell value
+        """
+
+        px = x * self.cell_w
+        py = y * self.cell_h
+
+        painter = QPainter(self.map_image)
+
+        if value == -1:
+            color = QColor(0, 0, 0)
+
+        elif value == 2000:
+            color = QColor(0, 255, 0)
+
+        elif value == 3: # Planned path commputed
+            color = QColor(0, 0, 255)
+
+        else:
+            gray = int(np.clip(value, 0.0, 1.0) * 255)
+            color = QColor(gray, gray, min(gray + 50, 255))
+
+        painter.fillRect(
+            px +1,
+            py +1,
+            self.cell_w -2,
+            self.cell_h -2,
+            color
+        )
+
+        painter.end()
+
+    def draw_robot_path_segment(self, p1, p2):
+        painter = QPainter(self.robot_path_image)
+
+        pen = QPen(Qt.GlobalColor.blue) #QPen(QColor(255, 255, 0, 180))
+        pen.setWidth(2)
+
+        painter.setPen(pen)
+        painter.drawLine(p1, p2)
+        painter.end()
+
+    def draw_robot_planned_path_segment(self, p1, p2):
+        painter = QPainter(self.robot_planned_path_image)
+
+        pen = QPen(Qt.GlobalColor.darkGreen) #QPen(QColor(0, 255, 0, 180))
+        pen.setWidth(2)
+
+        painter.setPen(pen)
+        painter.drawLine(p1, p2)
+        painter.end()
+
+    def draw_robot_navigation_path_segment(self, p1, p2):
+        painter = QPainter(self.navigation_robot_path_image)
+
+        pen = QPen(Qt.GlobalColor.red) #QPen(QColor(0, 0, 255, 180))
+        pen.setWidth(2)
+
+        painter.setPen(pen)
+        painter.drawLine(p1, p2)
+        painter.end()
+
+
+
     def slot_update_grid(self, grid_data):
-        dim, data, rb = grid_data
+        dim, data, rb, mode = grid_data
         src_h, src_w = dim
 
-        scale_y = 1 #self.rows / src_h
-        scale_x = 1 #self.cols / src_w
+        scale_y = 1
+        scale_x = 1
 
-        max_val = 5
+        max_val = 5 # Log-Odds maximum value
+
+        dirty_rect = QRect()
 
         with self.draw_lock:
-            #print("Gota data do map")
             for x, y, p in data:
                 i = int(y * scale_y)
                 j = int(x * scale_x)
 
-                if 0 <= y < self.rows and 0 <= x < self.cols:
-                    #p = 1 - 1 / (1 + np.exp(p))
-                    #self.grid[y][x] = p # min(255, self.grid[i][j] + int(p * 255))
-                    #print(x, y, p, 1 - (p + max_val) / (2 * max_val))
-                    # Normalize the value
-                    self.grid[y][x] = 1 - (p + max_val) / (2 * max_val)
+                if 0 <= i < self.rows and 0 <= j < self.cols:
+                    value = 1 - (p + max_val) / (2 * max_val)
+                    self.grid[i][j] = value
 
-                    #print(self.grid[i][j], int(255 * (1-self.grid[i][j])))
-                #print("\n\n")
+                    self.draw_cell(j, i, value)
+                    dirty_rect.united(
+                        QRect(
+                            j * self.cell_w,
+                            i * self.cell_h,
+                            self.cell_w,
+                            self.cell_h
+                        )
+                    )
 
-            self.robot = [rb[0], rb[1]]
+            robot_px = int(rb[0] * self.cell_w)
+            robot_py = int(rb[1] * self.cell_h)
+            new_robot = QPoint(robot_px, robot_py)
+
+            # Draw path incrementally
+            if mode == "E": # We are in exploration mode
+                if self.path_prev_robot is not None:
+                    self.draw_robot_path_segment(
+                        self.path_prev_robot,
+                        new_robot
+                    )
+
+                    path_rect = QRect(
+                        self.path_prev_robot,
+                        new_robot
+                    ).normalized()
+                    path_rect.adjust(-4, -4, 4, 4)
+
+                    dirty_rect = dirty_rect.united(path_rect)
+            elif mode == "W": # We are in waypoints mode
+                if self.navigation_path_prev_robot is not None:
+                    self.draw_robot_navigation_path_segment(
+                        self.navigation_path_prev_robot,
+                        new_robot
+                    )
+
+                    path_rect = QRect(
+                        self.navigation_path_prev_robot,
+                        new_robot
+                    ).normalized()
+                    path_rect.adjust(-4, -4, 4, 4)
+
+                    dirty_rect = dirty_rect.united(path_rect)
+            # Set the previous robot position and the robot current position
+            self.navigation_path_prev_robot = new_robot
+            self.path_prev_robot = new_robot
+            self.robot = QPoint(rb[0], rb[1])
+
+            robot_rect = QRect(
+                robot_px - 6,
+                robot_py - 6,
+                12,
+                12
+            )
+            dirty_rect = dirty_rect.united(robot_rect)
 
         self.update()
 
@@ -684,9 +830,9 @@ class MapGridWidget(QWidget):
         # Make a copy of the grid for pathfinding (obstacles > 1)
         grid_copy = np.array(self.grid, dtype=float)
 
-        path = astar(grid_copy, self.robot, goal, threshold=threshold)
+        path = astar(grid_copy, (self.robot.y(), self.robot.x()), goal, threshold=threshold)
 
-        if path is None:
+        if path is None or len(path) < 2:
             print("No path found")
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Information)
@@ -696,64 +842,95 @@ class MapGridWidget(QWidget):
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
             return None
+        else:
+            print("Path Found")
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Information)
+            msg.setWindowTitle("Information")
+            msg.setText("WayPoints")
+            msg.setInformativeText("Waypoints planned to destination")
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+
+        print("Path to A*", path)
 
         with self.draw_lock:
-            # mark the path in the grid
-            for i, j in path:
-                if (i, j) != self.robot:  # don't overwrite robot
-                    self.grid[i][j] = 3
+            # Clear planned and path
+            self.robot_planned_path_image.fill(Qt.GlobalColor.transparent)
+            self.navigation_robot_path_image.fill(Qt.GlobalColor.transparent)
 
-        self.update()
+            last_r, last_c = path[0]
+            last_point = QPoint(last_c * self.cell_w, last_r *self.cell_h)
+
+            for r, c in path[1:]:
+                new_point = QPoint(c * self.cell_w, r * self.cell_h)
+                self.draw_robot_planned_path_segment(
+                    last_point,
+                    new_point
+                )
+                last_point = new_point
+
+            self.update()
 
         return path
 
     def reset(self):
         with self.draw_lock:
+            self.robot_path_image.fill(Qt.GlobalColor.transparent)
+            self.robot_planned_path_image.fill(Qt.GlobalColor.transparent)
+            self.navigation_robot_path_image.fill(Qt.GlobalColor.transparent)
+
+            self.path_prev_robot = None
+            self.navigation_path_prev_robot = None
+
             self.grid = [[0.6 for _ in range(self.cols)] for _ in range(self.rows)]
-            self.robot = [0, 0]
+            self.robot = QPoint(0, 0)
+
+            self.map_image = QImage(self.width(), self.height(), QImage.Format.Format_RGB32)
+            self.map_image.fill(Qt.GlobalColor.darkGray)
+
+            self.build_static_grid()
+
             self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
-        painter.drawImage(0, 0, self.grid_image)
+        # Only repaint damaged area
+        painter.setClipRegion(event.region())
 
-        # TODO: Optimize this double for loop
-
-        for i in range(self.rows):
-            y = i * self.cell_h
-            for j in range(self.cols):
-                x = j * self.cell_w
-                v = self.grid[i][j]
-
-                if v == -1:
-                    continue
-                if v == 2000:
-                    painter.fillRect(x, y, self.cell_w, self.cell_h, QColor(0, 255, 0))
-                elif v == 3000:
-                    # Path computed
-                    painter.fillRect(x, y, self.cell_w, self.cell_h, QColor(0, 0, 255))
-                else:  # probability overlay threshold
-                    gray = int(np.clip(v, 0.0, 1.0) * 255)
-                    painter.fillRect(
-                        x, y,
-                        self.cell_w, self.cell_h,
-                        QColor(gray, gray, gray+50, 255)
-                    )
+        # Map image
+        painter.drawImage(0, 0, self.map_image)
 
 
-        # robot
-        ri, rj = self.robot
-        painter.fillRect(
-            rj * self.cell_w,
-            ri * self.cell_h,
-            self.cell_w,
-            self.cell_h,
-            QColor(255, 0, 0)
-        )
+        # Robot path image layer
+        if self.show_robot_path:
+            painter.drawImage(0, 0, self.robot_path_image)
+
+        #painter.end()
+        #return
+
+        # Planned path image layer
+        if self.show_planned_robot_path:
+            painter.drawImage(0, 0, self.robot_planned_path_image)
+
+        # Navigation path image layer
+        if self.show_navigation_robot_path:
+            painter.drawImage(0, 0, self.navigation_robot_path_image)
+
+        # Draw robot
+        painter.setBrush(QColor(255, 0, 0))
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        if self.show_robot:
+            painter.drawEllipse(self.robot.x() * self.cell_w, self.robot.y() * self.cell_h, 8, 8)
+
+        painter.end()
 
     def stop(self):
         self.controller.stop()
+
         self.controller.requestInterruption()
         self.controller.quit()
         self.controller.wait()

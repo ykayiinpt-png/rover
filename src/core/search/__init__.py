@@ -8,7 +8,9 @@ def astar(grid, start, goal, threshold=1):
     """
     start = tuple(start)
     goal  = tuple(goal)
-    
+
+    print(start, goal)
+
     rows, cols = grid.shape
     open_set = []
     heapq.heappush(open_set, (0, start))
@@ -39,7 +41,7 @@ def astar(grid, start, goal, threshold=1):
             neighbor = (ni, nj)
 
             if 0 <= ni < rows and 0 <= nj < cols:
-                if grid[ni, nj] > threshold:  # obstacle
+                if grid[ni, nj] <= threshold:  # obstacle
                     continue
 
                 tentative_g = g_score[current] + 1
