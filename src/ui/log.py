@@ -11,38 +11,38 @@ from PyQt6.QtCore import QDateTime, QObject, QThread, pyqtSignal
 class LogController(QThread):
     def __init__(self, log_receved_queue: multiprocessing.Queue, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         self.signals = LogEmitter()
-        
+
         self.log_receved_queue = log_receved_queue
-        
+
         self.stop_event = multiprocessing.Event()
-    
+
     def run(self):
         while not self.stop_event.is_set():
             # Handle Imu data
             if not self.log_receved_queue.empty():
                 data = self.log_receved_queue.get()
-                
+
                 self.signals.log_signal.emit(data["level"], data["msg"])
             else:
                 #print("Queue in Qthread is empty")
                 pass
-                
+
             # TODO revieww the timeR
             time.sleep(0.0001)
-    
+
     def stop(self):
         logging.info("[VelocityWidget] QThread stop fired")
         self.stop_event.set()
-        
+
 
 class LogWidget(QWidget):
     def __init__(self, log_received_queue: multiprocessing.Queue):
         super().__init__()
         self.setWindowTitle("Log Console")
         self.setFixedSize(250, 240)
-        
+
         self.controller = LogController(
             log_receved_queue=log_received_queue
         )
@@ -68,7 +68,7 @@ class LogWidget(QWidget):
                 background-color: #e1e1e1;
                 color: black;
                 font-family: Consolas;
-                font-size: 12px;
+                font-size: 10px;
             }
             QPushButton {
                 background-color: white;
@@ -81,7 +81,7 @@ class LogWidget(QWidget):
                 background-color: gray;
             }
         """)
-        
+
         #handler = QtLogHandler(self)
         #formatter = logging.Formatter(
         #    "%(asctime)s [%(levelname)s] %(message)s"
@@ -90,7 +90,7 @@ class LogWidget(QWidget):
 
         #logger = logging.getLogger()
         #logger.addHandler(handler)
-        
+
         self.controller.signals.log_signal.connect(self.slot_record_log)
         self.controller.start()
 
@@ -113,26 +113,26 @@ class LogWidget(QWidget):
     def clear_logs(self):
         with self.record_log_lock:
             self.log_box.clear()
-        
+
     def slot_record_log(self, level, msg):
         with self.record_log_lock:
             self.log(msg, level)
-        
+
     def stop(self):
         try:
             self.record_log_lock.release()
             self.record_log_lock.release_lock()
         except Exception as e:
             pass
-        
+
         self.controller.stop()
-        
+
         try:
             self.controller.signals.log_signal.disconnect(self.slot_record_log)
             self.controller.signals.log_signal.disconnect()
         except Exception:
             pass
-        
+
         self.controller.requestInterruption()
         self.controller.quit()
         self.controller.wait()
