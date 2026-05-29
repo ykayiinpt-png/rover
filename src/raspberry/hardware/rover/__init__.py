@@ -9,6 +9,7 @@ import numpy as np
 
 from src.core.shared import MemorySharedDict
 from src.core.utils import clamp, dict_equal_fast, sign, wrap_angle
+from src.raspberry.config import Config
 from src.raspberry.exploration import ExplorationPlanner
 from src.raspberry.hardware.rover.motor import RMotor
 from src.raspberry.hardware.rover.odometry import WheelOdometry
@@ -95,7 +96,7 @@ class Rover:
                 active_pid=False,
                 active_angle_pid=False,
                 swivel_velocity_pwm=80,
-                base_velocity=50, base_rotation_velocity:int=0.1, no_pid_pwm_dutycycle_value=50):
+                base_velocity=50, base_rotation_velocity:int=0.1, no_pid_stright_direction_pwm_dutycycle_value=50):
         """
         :param theta_target: the angle to maintant aound the é-axis
         :param control_mode: defines how the rover is controlled. We do have
@@ -105,6 +106,7 @@ class Rover:
         :param base_rotation_velocity: Base angular velocity used for in-place rotations, expressed in degrees per second.
         """
         
+        self.logger = logger
         
         self.shared_state = shared_state
         self.imu = imu
@@ -115,7 +117,11 @@ class Rover:
         ######################################
         # Control mode
         self.control_mode = control_mode
+        self.set_mode_ui_state()
         self.control_mode_next_mode = None
+        
+        self.direction = 1 # We are in the forward direction
+        self.turn_direction = 1 # No rotation
         
         
         ###################################
@@ -161,7 +167,7 @@ class Rover:
         """
         self.base_velocity = base_velocity
         self.base_rotation_velocity = base_rotation_velocity
-        self.no_pid_pwm_dutycycle_value = no_pid_pwm_dutycycle_value
+        self.no_pid_stright_direction_pwm_dutycycle_value = no_pid_stright_direction_pwm_dutycycle_value
         self.target_v_l = self.base_velocity
         self.target_v_r = self.base_velocity
         self.command_v_l = 0.0
@@ -207,6 +213,12 @@ class Rover:
         :param theta: the new target value
         """
         self.theta_target = theta
+        
+    def set_mode_ui_state(self):
+        if self.control_mode == Rover.MODE_WAYPOINTS_NAVIGATION:
+            self.shared_state["mode"] = "W"
+        else:
+            self.shared_state["mode"] = "E"
         
 
     @property        
@@ -255,30 +267,48 @@ class Rover:
             return
         
         payload = cmd.get("data")
-        print("payload", payload)
+        #print("payload", payload)
         cmd_type = cmd.get("type")
         if cmd_type == "joystick":
-            print("Joystick")
+            #print("Joystick")
             if payload.get("a") is None:
                 return
             
             self.exec_command(payload, dt)
-        elif cmd_type == "mapping":
-            pass
-        elif cmd_type == "navigation":
-            # Here we receive wayPoints to follow
-            
-            waypoints = cmd.get("data")
-            self.navigation.set_waypoints(waypoints, contains_start=True)
-            
+        elif cmd_type == "switch_mode":
             # Wes top the rover
             self.exec_command(self.COMMAND_STOP)
             
-            # control mode tags
-            self.control_mode_change_start_time = time.perf_counter()
+            payload = cmd.get("data")
+            if payload.get("mode") == "manual":
+                self.switch_control_mode(Rover.MODE_MANUAL_NAVIGATION)
+                self.logger.info("Control Mode switching to manual mode")
+            elif payload.get("mode") == "waypoint":
+                waypoints = payload.get("path")
+                
+                if waypoints is None:
+                    cfg = Config()
+                    
+                    if cfg.navigation.waypoint.run:
+                        self.navigation.set_waypoints(cfg.navigation.waypoint.items)
+                        self.logger.warn("Path is None. But Default Squared Waypoints has been loaded.")
+                    else:
+                        # Tells the remote that there is an error
+                        self.logger.error("Waypoint mode: Path is None")
+                else:
+                    self.navigation.set_waypoints(waypoints, contains_start=True)
+                    self.switch_control_mode(Rover.MODE_WAYPOINTS_NAVIGATION)
+                    self.logger.info("Control Mode switching to waypoints mode")
+            elif payload.get("mode") == "autonomous":
+                self.switch_control_mode(Rover.MODE_AUTONOMOUS_EXPLORATION)
+                self.logger.info("Control Mode switching to autonomous mode")
             
-            # Plan to change the control mode after a few seconds
-            self.control_mode_next_mode = Rover.MODE_WAYPOINTS_NAVIGATION
+    def switch_control_mode(self, mode):
+        # control mode tags
+        self.control_mode_change_start_time = time.perf_counter()
+            
+        # Plan to change the control mode after a few seconds
+        self.control_mode_next_mode = mode
             
             
     def change_direction(self, cmd):
@@ -321,11 +351,22 @@ class Rover:
             dt = 0
             
         self._stopped = False
+        self.direction = 0 # By default we are looking forward
+        self.turn_direction = 0
+        
+        if cmd.get("x") == 1:
+            self.turn_direction = -1 # We are in reverse configuration to move forward
+        elif cmd.get("x") == -1:
+            self.turn_direction = 1 # We are in reverse configuration to move forward
         
         if cmd.get("x") == 1 and self.control_mode == Rover.MODE_MANUAL_NAVIGATION:
             self.theta_target -= self.base_rotation_velocity * dt
         elif cmd.get("x") == -1 and self.control_mode == Rover.MODE_MANUAL_NAVIGATION:
             self.theta_target += self.base_rotation_velocity * dt
+        elif cmd.get("y") == 1:
+            self.direction = 1
+        elif cmd.get("y") == -1:
+            self.direction = -1
         elif cmd.get("a") == "stop":
             self.target_v_l = 0
             self.target_v_r = 0
@@ -337,8 +378,7 @@ class Rover:
             self.pid_angle.interrupt()
             self.odo.left_wheel.reset()
             self.odo.right_wheel.reset()
-            self.target_v_l = 0
-            self.target_v_r = 0
+            
             self.pwm_l = 0
             self.pwm_r = 0
             
@@ -356,38 +396,34 @@ class Rover:
     def update(self, dt):
         """
         Main loop
-        """        
-        if self.last_command is None:
-            print("No Command Yet received")
-            return
+        """
         
         ########################################
         #
         # Self state change
         # We are about to change mode
         if self.control_mode_next_mode is not None:
-            
             now = time.perf_counter()
             if self.control_mode_change_start_time is not None:
                 if now - self.control_mode_change_start_time > 5:
                     self.control_mode = self.control_mode_next_mode
+                    self.set_mode_ui_state()
                     
                     # We erase
                     self.control_mode_next_mode = None
                     self.exec_command(self.COMMAND_FORWARD)
+                    self.logger.info("Mode switched successfully.")
+        
+        if self.control_mode is None or self.last_command is None:
+            return
         
         # If we already stopped, we just return
-        if self._stopped:
+        #print(self.shared_state["stop"])
+        if self._stopped: # or self.shared_state["stop"]:
             # Just to avoid, in case we voer do it without knowing
             # out for control
             # TODO: Find a way to fix this
             self.move_break()
-            return
-        
-        if not self.active_pid:
-            # Apply the same base_velocity
-            self.motor_l.set_speed(self.no_pid_pwm_dutycycle_value)
-            self.motor_r.set_speed(self.no_pid_pwm_dutycycle_value)
             return
         
         ##
@@ -395,7 +431,7 @@ class Rover:
         ##
         
         base_rpm = self.base_velocity
-        rotation_rpm = 0
+        rotation_pwm = 0
         now = time.perf_counter()
         
         ############################################
@@ -404,7 +440,7 @@ class Rover:
 
         # Read the theta angle from the IMU SENSORS
         imu_data = None
-        with self.imu_sensor_thread_lock:
+        with self.imu_sensor_thread_lock: # NOTE: not neccesary since we do have the rover state
              imu_data = self.imu.get_data()
         self.command_theta = imu_data[2]
         
@@ -474,6 +510,7 @@ class Rover:
             
             if explorer_state in (ExplorationPlanner.STATE_MOVE_FORWARD, ExplorationPlanner.STATE_NONE):
                 if obstacle_detected:
+                    self.logger.info("Obstacle has been detected")
                     self.exec_command(self.COMMAND_STOP)
                     self._stopped = False
 
@@ -490,16 +527,22 @@ class Rover:
             elif explorer_state == ExplorationPlanner.STATE_OBSTACLE_DETECTED:
                 # We stop for a while
                 self.exec_command(self.COMMAND_STOP)
+                print("Stopped")
+                
+                # Clear the area explorer
+                self.explorer.reset_search_area()
+                print("Explorer area cleared")
+                
                 self._stopped = False
                 
-                theta_target = self.explorer.compute_safe_direction()
-                if theta_target is None:
-                    # We are trapped
-                    self.exec_command(self.COMMAND_STOP)
-                    print("[EXPLORER] Rover Trapped !!!!")
-                    return
+                #theta_target = self.explorer.compute_safe_direction()
+                #if theta_target is None:
+                #    # We are trapped
+                #    self.exec_command(self.COMMAND_STOP)
+                #    print("[EXPLORER] Rover Trapped !!!!")
+                #    return
 
-                self.explorer.theta_target = theta_target
+                #self.explorer.theta_target = theta_target
                 self.explorer.state = ExplorationPlanner.STATE_WAIT_AFTER_STOP
                 
                 return
@@ -514,25 +557,63 @@ class Rover:
                 
                 return
             elif explorer_state == ExplorationPlanner.STATE_OBSTACLE_AVOIDING:
-                theta_target, theta_error, is_clear = self.explorer.handle_obstacle(self.command_theta)
-                print(theta_target, theta_error, is_clear)
-                if is_clear:
-                    self.exec_command(self.COMMAND_STOP)
-                    time.sleep(0.001)
-                    self._stopped = False
+                #We rotate until we have done 360 degree
+                theta_target, theta_error, is_clear = self.explorer.search_open_area(self.command_theta)
+                print(f"theta_error={theta_error}, is_clear={is_clear}")
+                
+                if is_clear and theta_target:
+                    if theta_target is not None:
+                        print(f"theta_target={np.rad2deg(theta_target)}")
+                        self.exec_command(self.COMMAND_STOP)
+                        time.sleep(1)
+                        self._stopped = False
                     
-                    self.theta_target = theta_target
-                    self.explorer.state = ExplorationPlanner.STATE_MOVE_FORWARD
+                        self.theta_target = np.rad2deg(theta_target)
+                        self.explorer.state = ExplorationPlanner.STATE_OBSTACLE_AVOIDING_ROTATE
+                        
+                        self.logger.info(f"Avoid obstacle: Target Heading {self.theta_target}°")
+                    else:
+                        self.logger.error("No escape direction")
+                        self.explorer.reset_search_area()
                     return
                 else:
                     if theta_error < 0:
                         self.exec_command(Rover.COMMAND_TURN_LEFT)
                     elif theta_error > 0:
                         self.exec_command(Rover.COMMAND_TURN_RIGHT)
-                    
-                    # Set base RPM to zero in order to rotate on place
+                
                     base_rpm = 0
-            
+                    
+                #theta_target, theta_error, is_clear = self.explorer.handle_obstacle(self.command_theta)
+                #print(theta_target, theta_error, is_clear)
+                #if is_clear:
+                #    self.exec_command(self.COMMAND_STOP)
+                #    time.sleep(0.001)
+                #    self._stopped = False
+                #    
+                #    self.theta_target = theta_target
+                #    self.explorer.state = ExplorationPlanner.STATE_MOVE_FORWARD
+                #    return
+                #else:
+                #    if theta_error < 0:
+                #        self.exec_command(Rover.COMMAND_TURN_LEFT)
+                #    elif theta_error > 0:
+                #        self.exec_command(Rover.COMMAND_TURN_RIGHT)
+                #    
+                #    # Set base RPM to zero in order to rotate on place
+                #    base_rpm = 0
+            elif explorer_state == ExplorationPlanner.STATE_OBSTACLE_AVOIDING_ROTATE:
+                theta_error = wrap_angle(self.theta_target - self.command_theta, deg=True)
+                print("In theta rotation! theta error: ", theta_error, self.theta_target, self.command_theta)
+                if abs(theta_error) < 5:
+                    self.exec_command(self.COMMAND_STOP)
+                    time.sleep(0.1)
+                    self._stopped = False
+                    self.explorer.state = ExplorationPlanner.STATE_MOVE_FORWARD
+                    return
+                else:
+                    # Rotate in one direction
+                    self.exec_command(Rover.COMMAND_TURN_RIGHT)
             elif self.explorer.state == ExplorationPlanner.STATE_STOP:
                 self.exec_command(self.COMMAND_STOP)
                 self._stopped = False
@@ -541,8 +622,9 @@ class Rover:
             else:
                 pass
         elif self.control_mode == Rover.MODE_MANUAL_NAVIGATION:
+            # Here we just compute the heading angle error
+            # that will be use by the orientation PID if necessary
             theta_error = wrap_angle(self.theta_target - self.command_theta, deg=True)
-            pass
         else:
             pass
             
@@ -556,9 +638,15 @@ class Rover:
         
         if self.last_command["x"] in [-1, 1]:
             # We have to rotate somehow to heading to acertain angle
-            rotation_rpm = self.swivel_velocity_pwm if theta_error > 0 else -self.swivel_velocity_pwm
+            rotation_pwm = self.swivel_velocity_pwm #if theta_error > 0 else -self.swivel_velocity_pwm
             base_rpm = 0
             #print("Fixing angle")
+            
+            # NOTE: Thinking if We have to review this block of code
+            if self.control_mode == Rover.MODE_MANUAL_NAVIGATION:
+                if self.direction == 0 and abs(theta_error) < 5: # NOTE: direction = 0 meaning we are rotating
+                    rotation_pwm = 0
+                    self.exec_command(Rover.COMMAND_STOP)
         else:
             if self.active_angle_pid:
                 if self.pid_angle_last_time is None:
@@ -568,14 +656,18 @@ class Rover:
                     if abs(theta_error) < 20:
                         # We have to wait some time
                         # so that the velocity can stabilize
-                        if now - self.pid_angle_last_time >= 1:
+                        if now - self.pid_angle_last_time >= 2:
                             omega = self.pid_angle.compute(self.theta_target, self.command_theta, theta_error)
                             #print("Error theta: ", theta_error)
                             #print("Angle Omega: ", omega)
                             omega = clamp(omega, -int(self.base_velocity * 0.7), int(self.base_velocity * 0.7))
                             #print("Angle Omega Clamped: ", omega)
                     else:
+                        # Here we are wainting the rover to rotate on place
+                        # to reduce the heading angle error
                         pass
+            else:
+                pass
         
         ############################################
         # Odometry
@@ -587,48 +679,57 @@ class Rover:
         # Velocity target control
         #        
         # Update the target velocity
-        if self.last_command["y"] == 1:
-            self.target_v_l = base_rpm - omega
-            self.target_v_r = base_rpm + omega
-        elif self.last_command["y"] == -1:
-            # Sign are inversed here because we are running backward
-            self.target_v_l = base_rpm + omega
-            self.target_v_r = base_rpm - omega
+        if self.last_command.get("y", 0) != 0:
+            if not self.active_pid: 
+                # We do not have pid actvated so we jsut use the base Powers
+                self.pwm_l = self.direction * self.no_pid_stright_direction_pwm_dutycycle_value
+                self.pwm_r = self.direction * self.no_pid_stright_direction_pwm_dutycycle_value
+            else:
+                # We have a PID activated
+                # Multiply by the direction in order to avoid conditions check
+                base_rpm = self.direction * base_rpm
+            
+                self.target_v_l =  base_rpm - self.direction * omega
+                self.target_v_r = base_rpm + self.direction * omega
         else:
-            # TODO: review for left and
-            self.target_v_l = base_rpm + omega + rotation_rpm
-            self.target_v_r = base_rpm - omega - rotation_rpm
+            # We are rotating
+            
+            self.target_v_l = base_rpm # + rotation_pwm
+            self.target_v_r = base_rpm # - rotation_pwm
+            
+            self.pwm_l = self.turn_direction * rotation_pwm
+            self.pwm_r = self.turn_direction * -rotation_pwm
         
         #############################################
         # Motor PID 
         #
         # out the pwm dutycycle 
-        self.pwm_l = self.pid_speed_l.compute(abs(self.target_v_l), self.command_v_l)
-        self.pwm_r = self.pid_speed_r.compute(abs(self.target_v_r), self.command_v_r)
-        
-        # Velocity asjustment value, currently not needed
-        # TODO: Remove it
-        Kpwm = 0
-        
-        self.pwm_l += self.pwm_bais_l - Kpwm
-        self.pwm_r += self.pwm_bais_r + Kpwm
+        # Only apply pid if we are moving forward or backward
+        if self.last_command.get("y", 0) != 0:
+            if self.active_pid: 
+                self.pwm_l = self.pid_speed_l.compute(abs(self.target_v_l), self.command_v_l)
+                self.pwm_r = self.pid_speed_r.compute(abs(self.target_v_r), self.command_v_r)
+                
+                # Velocity asjustment value, currently not needed
+                # TODO: Remove it
+                Kpwm = 0
+                
+                self.pwm_l += self.pwm_bais_l - Kpwm
+                self.pwm_r += self.pwm_bais_r + Kpwm
+            else:
+                pass
+        else:
+            pass
         
         
         # Apply the the pid out value depending on the command direction
-        # we have 
-        
-        # if self.last_command["y"] == 1:
-        #     # Moving forward the default action
-        #     pass
-        # elif self.last_command["y"] == -1:
-        #     # Move backward
-        #     self.pwm_l = self.pwm_l * (-1)
-        #     self.pwm_r = self.pwm_r * (-1)
+        # we have
         
         # Set motor speed
         self.motor_l.set_speed(self.pwm_l * sign(self.target_v_l))
         self.motor_r.set_speed(self.pwm_r * sign(self.target_v_r))
-        print(self.pwm_r)
+        #print("PWM Right", self.pwm_r)
+        #print("PWM Left", self.pwm_l)
         
         #############################
         # Command changing tampering
@@ -665,8 +766,11 @@ class Rover:
 
 class RoverThread(threading.Thread):
     def __init__(self, rover: Rover, odometry_data_sent_queue: multiprocessing.Queue,
+                 logger: PiLogger,
                 f=10, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        
+        self.logger = logger
         
         self.rover = rover
         self.f = f
@@ -685,9 +789,9 @@ class RoverThread(threading.Thread):
         """
         
         data = {
-            "wl_t": self.rover.target_v_l,
+            "wl_t": abs(self.rover.target_v_l),
             "wl_c": self.rover.command_v_l * sign(self.rover.target_v_l),
-            "wr_t": self.rover.target_v_r,
+            "wr_t": abs(self.rover.target_v_r),
             "wr_c": self.rover.command_v_r * sign(self.rover.target_v_r),
             "wl_p": abs(self.rover.pwm_l),
             "wr_p": abs(self.rover.pwm_r),
@@ -748,6 +852,9 @@ class RoverThread(threading.Thread):
         """
         cycle_duration = 1/self.f
         last_handle_batch_time = time.perf_counter()
+        
+        print("Waiting for Command")
+        self.logger.info("Waiting For Command")
         
         while not self.stop_event.is_set():
             now = time.perf_counter()

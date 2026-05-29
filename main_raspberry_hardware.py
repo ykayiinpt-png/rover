@@ -89,6 +89,7 @@ def main():
     
     pi_logger = PiLogger("RaspberryPI", log_sent_queue)
     rover_logger = PiLogger("Rover", log_sent_queue)
+    rover_thread_logger = PiLogger("RoverThread", log_sent_queue)
     mapping_logger = PiLogger("Mapping", log_sent_queue)
     
     features = cfg.features
@@ -130,12 +131,12 @@ def main():
             {
                 'name': cfg.ultra_sounds.left.name,  "key": cfg.ultra_sounds.left.key,
                 'trig': cfg.ultra_sounds.left.gpio.trig, 'echo': cfg.ultra_sounds.left.gpio.echo,
-                "angle_offset": -np.pi/2
+                "angle_offset": np.pi/2
             },
             {
                 'name': cfg.ultra_sounds.right.name,  "key": cfg.ultra_sounds.right.key,
                 'trig': cfg.ultra_sounds.right.gpio.trig, 'echo': cfg.ultra_sounds.right.gpio.echo,
-                "angle_offset": np.pi/2
+                "angle_offset": -np.pi/2
             },
             #{'name': 'Front', "key": "u_f", 'trig': 20, 'echo': 21},
             #{'name': 'Right', "key": "u_r", 'trig': 26, 'echo': 7}, # NOTE: Have to disable SPI in order to add interruption to the pin 7 an SPI PIN
@@ -197,6 +198,7 @@ def main():
     rover_explorer = ExplorationPlanner(
         safe_avoid_angle=cfg.exploration.angle_threshold,
         safe_distance=cfg.exploration.dist_threshold,
+        max_angle_gap_deg=cfg.exploration.max_angle_gap_deg, min_sector_size_deg=cfg.exploration.min_sector_size_deg,
         rover_shared_state=rover_shared_state,
         mapping_shared_state=mapping_shared_state,
         navigation_shared_state=navigation_shared_state,
@@ -222,10 +224,11 @@ def main():
     rover = Rover(
         navigation=rover_navigation,
         explorer=rover_explorer,
-        control_mode= Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
+        control_mode=None, #Rover.MODE_AUTONOMOUS_EXPLORATION, #Rover.MODE_WAYPOINTS_NAVIGATION, # Rover.MODE_MANUAL_NAVIGATION,
         base_velocity=cfg.rover.velocity,
         base_rotation_velocity=cfg.rover.velocity_rotate,
         swivel_velocity_pwm=cfg.rover.swivel_velocity_pwm,
+        no_pid_stright_direction_pwm_dutycycle_value=cfg.rover.no_pid_stright_direction_pwm,
         shared_state=rover_shared_state,
         odo= odometry,
         
@@ -295,7 +298,8 @@ def main():
         mapping_shared_state=mapping_shared_state,
         navigation_shared_state=navigation_shared_state,
         
-        logger=pi_logger
+        logger=pi_logger,
+        rover_thread_logger=rover_thread_logger
     )
     print(raspberry_pi_instance)
     

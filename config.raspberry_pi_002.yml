@@ -4,7 +4,7 @@ mqtt:
     port: 1883
 
 features: 
-    #- video
+    - "video"
     - "data"
     #- commands
     #- none
@@ -13,7 +13,7 @@ features:
 # Video processing
 ##########################################
 video:
-    enabled: false
+    enabled: true
     pipelines:
         # NOTE: Disabled for Performance and Memory Issue
         object_detection:
@@ -154,10 +154,10 @@ rover:
     velocity: 200 #147 # 147 RPM = 0.5 m/s
     velocity_rotate: 5 # 20 degree per second, command left and right velocity
     # In place rotation velocity added to motor bias
-    swivel_velocity_pwm: 15 # Units is ducycycle , 15 for indoor
+    swivel_velocity_pwm: 16 # Units is ducycycle , 15 for indoor
     no_pid_stright_direction_pwm: 20
-    enable_pid: false
-    enable_angle_pid: false
+    enable_pid: true
+    enable_angle_pid: true
     odometry:
         wheels_base_distance: 0.10 # m, 10cm --> 0.10 m
         left_wheel:
@@ -205,7 +205,7 @@ rover:
             #kd: 0.01
             kp: 0.05
             ki: 0.001
-            kd: 0.0
+            kd: 0.0 #0.0075
             #kp: 4.1
             #ki: 0.9
             #kd: 0
@@ -243,8 +243,8 @@ mapping:
         width: 8 # 10 meters
         height: 8 # 10 meters
         resolution:
-            x: 0.1 #0.3
-            y: 0.1 #0.24
+            x: 0.2 #0.3
+            y: 0.2 #0.24
         log_odds:
             free: -0.4
             obstacle: 0.85
@@ -258,13 +258,13 @@ navigation:
     enabled: true
     angle_threshold: 3
     dist_threshold: 0.2
-    distance_multiplier: 1
+    distance_multiplier: 2
     # Rover dimensions. It represents the norm of of the two axis
     dim:
         w: 0.24
         l: 0.30
     waypoint:
-        run: false
+        run: true
         items: 
             - [10, 0] # 0deg
             - [10, -10] # -90deg
@@ -279,6 +279,6 @@ navigation:
 exploration:
     enabled: true
     angle_threshold: 5
-    dist_threshold: 0.25
+    dist_threshold: 0.5
     max_angle_gap_deg: 50 # Salle TP indoors because of hight rotation velocity
     min_sector_size_deg: 60 # Salle TP indoors because of hight rotation velocity

@@ -5,6 +5,7 @@ import numpy as np
 
 from src.core.shared import MemorySharedDict
 from src.core.utils import wrap_angle
+from src.raspberry.exploration.openarea import OpenAreaExplorer
 
 
 class ExplorationPlanner:
@@ -20,14 +21,16 @@ class ExplorationPlanner:
     STATE_STOP = 2
     STATE_OBSTACLE_DETECTED = 3
     STATE_OBSTACLE_AVOIDING = 4
-    STATE_WAIT_AFTER_STOP = 5
+    STATE_OBSTACLE_AVOIDING_ROTATE = 5
+    STATE_WAIT_AFTER_STOP = 6
 
     def __init__(self,
                 rover_shared_state: MemorySharedDict, 
                 mapping_shared_state: MemorySharedDict,
                 navigation_shared_state: MemorySharedDict,
                 safe_distance=0.5,
-                safe_avoid_angle=3):
+                safe_avoid_angle=3,
+                max_angle_gap_deg=50, min_sector_size_deg=60):
         """
         Instaciate the planner object
         
@@ -49,6 +52,16 @@ class ExplorationPlanner:
         # We have to move only if we have enough information about the
         # environment that the way is free to move
         self.state = ExplorationPlanner.STATE_NONE
+        
+        # open area explorer 
+        self.open_area_explorer = OpenAreaExplorer(
+            open_distance_threshold=self.safe_distance,
+            filter_window_size=2,
+            max_angle_gap_deg=max_angle_gap_deg,
+            min_sector_size_deg=min_sector_size_deg,
+        )
+        self.rotate_total_theta_angle = 0
+        self.rotate_prev_theta_angle = 0
         
         self._stopped = False
         self.detect_obstacle_top_time = time.perf_counter()
@@ -222,6 +235,49 @@ class ExplorationPlanner:
         # -----------------------------------------
         return self.theta_target, theta_error, False
     
+    def reset_search_area(self):
+        self.rotate_total_theta_angle = 0
+        self.rotate_prev_theta_angle = 0
+        
+        self.open_area_explorer.clear()
+    
+    def search_open_area(self, current_heading_angle):
+        """
+        Search for open area. We rotate for 360 degree and take samples
+        As soon as we have aa complete tour done, with the samples
+        we compute the best heading angle to take in order to avoid the
+        current obstacle
+        """
+        delta = current_heading_angle - self.rotate_prev_theta_angle
+        if delta > 180:
+            delta -= 360
+        elif delta < -180:
+            delta += 360
+        
+        self.rotate_total_theta_angle += delta
+        self.rotate_prev_theta_angle = current_heading_angle
+        
+        print("Total Angle Rotation: ", self.rotate_total_theta_angle)
+        
+        if abs(self.rotate_total_theta_angle) > 360:
+            # We have done a complete tour
+            print("A complete tour done")
+            
+            best_angle = self.open_area_explorer.get_best_heading()
+            return best_angle, 0, True
+        else:
+            # Add a sample (angle, distance from the front ultrasound)
+            distances =  self.mapping_shared_state.get("ultra_sound_dists")
+            u_f = distances.get('u_f', 0)
+            
+            self.open_area_explorer.add_sample(
+                np.deg2rad(current_heading_angle),
+                front_distance=u_f
+            )
+
+        
+        return None, 360, False
+        
     def start(self):
         self._stopped = False
         self.state = ExplorationPlanner.STATE_STOP

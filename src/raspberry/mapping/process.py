@@ -6,6 +6,7 @@ import time
 import numpy as np
 
 from src.core.shared import MemorySharedDict
+from src.raspberry.hardware.rover import Rover
 from src.raspberry.mapping.grid import OccupancyMap
 from src.raspberry.mapping.kalman import KalmanMapping
 
@@ -66,6 +67,7 @@ class MappingProcess(multiprocessing.Process):
         payload = self.occupacy_grid.get_cells_updated_and_reset()
         
         payload["robot"] = [self.occupacy_grid.rx, self.occupacy_grid.ry]
+        payload["mode"] = self.rover_shared_state["mode"]
         
         q_data = {
             "topic": "slam/rover/data/mapping/grid",
@@ -115,8 +117,8 @@ class MappingProcess(multiprocessing.Process):
                     
                     
                     for k, v in ultra_sound_dists.items():
-                        print(f"Ulstra sound k: {k}  -- {v}")
-                        print("Offset: ", ultra_sound_angle_offsets[k])
+                        #print(f"Ulstra sound k: {k}  -- {v}")
+                        #print("Offset: ", ultra_sound_angle_offsets[k])
                         self.occupacy_grid.mark_obstacle(
                             x, y, theta,
                             v,

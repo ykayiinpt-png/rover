@@ -283,7 +283,7 @@ class WheelOdometry:
         self.navigation_shared_state["odometry"] = res
         self.mapping_shared_state["odometry"] = res
         
-        print(self.mapping_shared_state)
+        #print(self.mapping_shared_state)
         
         return res
 

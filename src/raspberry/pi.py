@@ -31,7 +31,7 @@ class RaspberryPi:
                 mapping_shared_state: MemorySharedDict,
                 navigation_shared_state: MemorySharedDict,
                 
-                logger: PiLogger):
+                logger: PiLogger, rover_thread_logger: PiLogger):
         
         #state
         self.rover_shared_state = rover_shared_state
@@ -66,6 +66,7 @@ class RaspberryPi:
         self.rover_thread = RoverThread(
             rover=rover,
             odometry_data_sent_queue=odometry_data_sent_queue,
+            logger=rover_thread_logger
         )
         
         self.running = True
