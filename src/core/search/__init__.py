@@ -1,6 +1,43 @@
 import heapq
 
-def astar(grid, start, goal, threshold=1):
+
+from math import gcd
+
+def normalize(dx, dy):
+    g = gcd(dx, dy)
+    return (dx // g, dy // g)
+
+def fn_condense_path(points):
+    if len(points) <= 2:
+        return points[:]
+
+    result = [points[0]]
+
+    # Initial direction
+    dx = points[1][0] - points[0][0]
+    dy = points[1][1] - points[0][1]
+    prev_dir = normalize(dx, dy)
+
+    for i in range(1, len(points) - 1):
+        x1, y1 = points[i]
+        x2, y2 = points[i + 1]
+
+        dx = x2 - x1
+        dy = y2 - y1
+
+        curr_dir = normalize(dx, dy)
+
+        # Keep point only if direction changes
+        if curr_dir != prev_dir:
+            result.append(points[i])
+
+        prev_dir = curr_dir
+
+    result.append(points[-1])
+
+    return result
+
+def astar(grid, start, goal, threshold=1, condense_path=True):
     """
     grid : 2D np.ndarray, obstacles > 1
     start : (i,j)
@@ -33,6 +70,9 @@ def astar(grid, start, goal, threshold=1):
                 current = came_from[current]
             path.append(start)
             path.reverse()
+
+            if condense_path:
+                return fn_condense_path(path)
             return path
 
         i, j = current
