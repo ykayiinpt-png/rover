@@ -2,7 +2,7 @@ import logging
 import multiprocessing
 
 from PyQt6.QtCore import QSize, QTimer, Qt
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QActionGroup
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton, QToolBar, QVBoxLayout, QWidget
 
 from src.core.shared import MemorySharedDict
@@ -59,6 +59,8 @@ class MainWindow(QMainWindow):
 
         # Objects
         self.ui_state = ui_state
+
+        self.command_sent_data_queue = command_sent_data_queue
 
         self.keyboard_joystick_dialog = KeyboardJoystickDialog(
             commands_send_queue=command_sent_data_queue,
@@ -190,6 +192,45 @@ class MainWindow(QMainWindow):
         data_acq_menu_rovstate_menus_velocity_action.triggered.connect(self.slot_menu_acq_rstate_velocity)
         data_acq_menu_rovstate_menus.addAction(data_acq_menu_rovstate_menus_velocity_action)
 
+        # Control mode
+        control_mode_menu = data_acq_menu_rovstate_menus.addMenu("Control Mode")
+
+        control_mode_group = QActionGroup(self)
+        control_mode_group.setExclusive(True)
+
+        # Create actions
+        manual_mode_action = QAction("Manual Mode", self)
+        manual_mode_action.setCheckable(True)
+
+        waypoint_mode_action = QAction("Waypoint Mode", self)
+        waypoint_mode_action.setCheckable(True)
+
+        autonomous_mode_action = QAction("Autonomous Mode", self)
+        autonomous_mode_action.setCheckable(True)
+
+        control_mode_group.addAction(manual_mode_action)
+        control_mode_group.addAction(waypoint_mode_action)
+        control_mode_group.addAction(autonomous_mode_action)
+
+
+        # Add actions to submenu
+        control_mode_menu.addAction(manual_mode_action)
+        control_mode_menu.addAction(waypoint_mode_action)
+        control_mode_menu.addAction(autonomous_mode_action)
+
+        # Connect actions
+        manual_mode_action.triggered.connect(
+            lambda: self.slot_control_mode_selected("manual")
+        )
+
+        waypoint_mode_action.triggered.connect(
+            lambda: self.slot_control_mode_selected("waypoint")
+        )
+
+        autonomous_mode_action.triggered.connect(
+            lambda: self.slot_control_mode_selected("autonomous")
+        )
+
         data_acq_menu_video_m = data_acq_menu.addMenu("Video")
         data_acq_menu_video_m_start_track_action = QAction("Start Track", self)
         data_acq_menu_video_m_start_track_action.triggered.connect(self.slot_menu_acq_video_start_track)
@@ -254,6 +295,17 @@ class MainWindow(QMainWindow):
         self.logs_widget.stop()
 
         event.accept()
+
+    def slot_control_mode_selected(self, mode_name):
+        print(f"Control mode selected: {mode_name}")
+        try:
+            # TODO: This is becoming redundant, use a propper class
+            self.command_sent_data_queue.put({
+                "topic": "slam/rover/commands/remote",
+                "payload":  {"type": "switch_mode", "data": {"mode": mode_name}}
+            })
+        except Exception:
+            pass
 
     def slot_update_status(self):
         if self.ui_state["alive"]:

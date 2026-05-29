@@ -639,6 +639,7 @@ class MapGridWidget(QWidget):
         self.show_planned_robot_path = True
         self.robot_planned_path_image = QImage(self.width(), self.height(), QImage.Format.Format_RGBA32FPx4)
         self.robot_planned_path_image.fill(Qt.GlobalColor.transparent)
+        self.robot_planned_destination_pos = None #QPointF(0, 0)
 
         # While following a path
         self.show_navigation_robot_path = True
@@ -870,6 +871,8 @@ class MapGridWidget(QWidget):
                 )
                 last_point = new_point
 
+            self.robot_planned_destination_pos = QPoint(path[-1][1], path[-1][0])
+
             self.update()
 
         return path
@@ -882,6 +885,7 @@ class MapGridWidget(QWidget):
 
             self.path_prev_robot = None
             self.navigation_path_prev_robot = None
+            self.robot_planned_destination_pos = None
 
             self.grid = [[0.6 for _ in range(self.cols)] for _ in range(self.rows)]
             self.robot = QPoint(0, 0)
@@ -914,6 +918,16 @@ class MapGridWidget(QWidget):
         # Planned path image layer
         if self.show_planned_robot_path:
             painter.drawImage(0, 0, self.robot_planned_path_image)
+
+            if self.robot_planned_destination_pos is not None:
+                painter.setBrush(QColor(255, 255, 0))
+                painter.setPen(Qt.PenStyle.NoPen)
+
+                painter.drawEllipse(
+                    self.robot_planned_destination_pos.x() * self.cell_w,
+                    self.robot_planned_destination_pos.y() * self.cell_h,
+                    8, 8
+                )
 
         # Navigation path image layer
         if self.show_navigation_robot_path:

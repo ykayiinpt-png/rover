@@ -99,9 +99,10 @@ class MapNavigationControlWidget(QWidget):
             msg.exec()
         else:
             try:
+                # TODO: reorganize this queues messaging in a proper way
                 self.command_sent_data_queue.put({
                     "topic": "slam/rover/commands/remote",
-                    "payload":  {"type": "navigation", "data": self.computed_waypoints}
+                    "payload": {"type": "switch_mode", "data": {"mode": "waypoint", "path": self.computed_waypoints}}
                 })
             except Exception as e:
                 logging.exception("[MapNavigationControl] Exception occured")
